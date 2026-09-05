@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Why the stable form of softmax exists</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  input[type=range]{width:320px;vertical-align:middle;accent-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  code{color:#2dd4bf}
+  .pnl{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;flex:1 1 400px;min-width:360px}
+  .pnl h3{margin:0 0 2px;font-size:.95rem;color:#e2e8f0;font-weight:600}
+  .pnl .sub{color:#94a3b8;font-size:.8rem;margin:0 0 10px}
+  .pr{display:flex;align-items:center;gap:8px;margin-bottom:3px;font-size:.82rem}
+  .ix{color:#64748b;width:26px}
+  .bw{flex:1;height:12px;background:#0f172a;border-radius:3px;overflow:hidden}
+  .bw i{display:block;height:100%;background:#2dd4bf}
+  .naive .bw i{background:#fb923c}
+  .pv{width:86px;text-align:right;font-variant-numeric:tabular-nums;color:#e2e8f0}
+  .pv.bad{color:#f87171}
+  .lt{width:10px;height:10px;border-radius:50%;background:#2dd4bf;flex:0 0 auto}
+  .lt.nan{background:#f87171}
+  .lt.inf{background:#fbbf24}
+  .foot{margin-top:9px;padding-top:9px;border-top:1px solid #334155;font-size:.82rem;color:#94a3b8;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .foot b{color:#2dd4bf;font-weight:600}
+  .foot b.bad{color:#f87171}
+  .mini{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 14px;font-size:.84rem;margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .mini .nm{color:#e2e8f0;font-weight:600;min-width:230px}
+  .mini .pv{width:auto;text-align:left}
+  .num{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;font-size:.85rem;margin-top:14px}
+  .num div{margin-bottom:4px}
+  .num b{color:#2dd4bf;font-size:1.05rem}
+  .legend{color:#64748b;font-size:.8rem;margin-top:10px}
+</style>
+
+<h1>Why the stable form of softmax exists</h1>
+<p>Two panels compute the same thing. The left one writes softmax the way the definition writes it, <code>exp(x) / &Sigma; exp(x)</code>. The right one subtracts the largest input first, which changes nothing in exact arithmetic and everything in float32. Raise the inputs with the slider and watch the left panel fill with non-numbers while the right panel does not move. Every exponential, sum, division and non-number test is a kernel call.</p>
+
+<div class="row" style="margin-bottom:10px;align-items:center">
+  <label>largest input value <input type="range" id="pk" min="-120" max="120" step="0.01" value="0"> <b id="pkv" style="color:#2dd4bf">0.00</b></label>
+  <button id="sweep">Sweep</button>
+  <button data-go="0">0</button><button data-go="88">88</button><button data-go="88.5">88.5</button><button data-go="89">89</button><button data-go="-88">&minus;88</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+
+<div class="row" style="margin-top:10px">
+  <div class="pnl naive">
+    <h3>Naive &mdash; <code>Exp</code>, <code>ReduceSum</code>, <code>Div</code></h3>
+    <p class="sub">exp(x<sub>i</sub>) &divide; &Sigma;<sub>j</sub> exp(x<sub>j</sub>)</p>
+    <div id="nrows"></div>
+    <div class="foot" id="nfoot"></div>
+  </div>
+  <div class="pnl">
+    <h3>Stable &mdash; <code>ReduceMax</code> and <code>Sub</code> in front</h3>
+    <p class="sub">exp(x<sub>i</sub> &minus; m) &divide; &Sigma;<sub>j</sub> exp(x<sub>j</sub> &minus; m), &nbsp; m = max x</p>
+    <div id="srows"></div>
+    <div class="foot" id="sfoot"></div>
+  </div>
+</div>
+
+<div class="mini"><span class="nm">the <code>Softmax</code> kernel itself</span><span class="pv" id="mx1">&ndash;</span><span class="lt" id="ml1"></span></div>
+<div class="mini"><span class="nm">exp(x &minus; <code>ReduceLogSumExp</code>(x))</span><span class="pv" id="mx2">&ndash;</span><span class="lt" id="ml2"></span></div>
+<p class="legend">Lights: teal &mdash; the value is a number. Amber &mdash; <code>IsInf</code> says infinite. Red &mdash; <code>IsNaN</code> says not a number. The bars are the probabilities, and the eight of them should always add to 1.</p>
+
+<div class="num" id="breaks">measuring the three break points&hellip;</div>
+
+<h2>The science</h2>
+<p>Softmax is unchanged by a shift. Add a constant c to every input and each term of
+<code>exp(x<sub>i</sub>) / &Sigma; exp(x<sub>j</sub>)</code> gains a factor <code>e<sup>c</sup></code> top and bottom, which cancels, so
+<code>softmax(x + c) = softmax(x)</code> exactly. The stable form spends that freedom on <code>c = &minus;max(x)</code>: the largest
+exponent becomes <code>exp(0) = 1</code>, the sum is at least 1, and nothing can grow.</p>
+<p>Float32 stops at 3.4028235&times;10<sup>38</sup>, so <code>exp(x)</code> goes infinite above <code>ln(3.4028235e38) = 88.72284</code>.
+This card bisects to <b>88.7228</b>. But the sum breaks first, at <b>88.2645</b>, which is that limit minus
+<code>ln(&Sigma; e<sup>&minus;k</sup>)</code> for k = 0&hellip;7, or 0.45834. The band between the two is the reason this page exists: every
+exponential is still finite, the sum is infinite, and finite divided by infinity is zero. At a slider value of 88.5 the naive panel
+returns eight zeros, is off by 0.63, and lights <b>no</b> red &mdash; <code>IsNaN</code> has nothing to report. It is wrong in silence.
+Above 88.7228 it is infinity over infinity, and the red lights come on.</p>
+<p>Underflow mirrors it. Every exponential flushes to zero below <code>ln(1.1754944e&minus;38) = &minus;87.3365</code>; measured
+<b>&minus;87.3366</b>. That confirms independently that this GPU discards subnormals, which page 09 found another way &mdash; kept
+subnormals would break at &minus;103.97.</p>
+<p>The stable route never moves: 5.9&times;10<sup>&minus;8</sup> from the reference everywhere between &minus;120 and 120, which is float32
+rounding of the reference itself, not error. The <code>Softmax</code> manifest states it subtracts the max internally. The
+<code>ReduceLogSumExp</code> manifest promises only <code>log(sum(exp(x)))</code>, yet it too survives to 120 here, tracking to
+2.3&times;10<sup>&minus;6</sup> &mdash; undocumented, so not to be relied on.</p>
+
+
+<p style="margin-top:14px">The eight inputs are the slider value and then that value minus 1, 2, &hellip; 7, so the correct answer never changes as the slider moves. The naive route is <code>Exp</code>, <code>ReduceSum</code> over the last axis, <code>Div</code>. The stable route inserts <code>ReduceMax</code> and <code>Sub</code> in front of it. Both divisions broadcast a shape-[1] scalar against a shape-[1,8] row. <code>IsInf</code> tests the exponentials and the sum, <code>IsNaN</code> tests each output, and both answers come from the GPU rather than from JavaScript. The three break points are found by bisection on the card, twenty-eight halvings each, calling the same naive routine that draws the left panel.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 9 of the 207:</b> <code>Div</code> <code>Exp</code> <code>IsInf</code> <code>IsNaN</code> <code>ReduceLogSumExp</code> <code>ReduceMax</code> <code>ReduceSum</code> <code>Softmax</code> <code>Sub</code></p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [exp, div, sub, rsum, rmax, rlse, smax, isnan, isinf] = await Promise.all(
+    ["Exp", "Div", "Sub", "ReduceSum", "ReduceMax", "ReduceLogSumExp", "Softmax", "IsNaN", "IsInf"].map(op));
+  const $ = (id) => document.getElementById(id);
+
+  const N = 8, OFF = [0, -1, -2, -3, -4, -5, -6, -7];
+  const C = OFF.reduce((s, o) => s + Math.exp(o), 0);              // 1.5814460
+  const REF = OFF.map((o) => Math.exp(o) / C);                     // the answer, at every slider position
+  const FMAX = 3.4028234663852886e38, FMIN = 1.1754943508222875e-38, FSUB = 1.401298464324817e-45;
+  const f32 = (a, shape) => ({ data: Float32Array.from(a), shape });
+  const cpu = (t, shape) => ({ data: t.data, shape });             // rewrap a read-back result as an input
+  const RED = { attrs: { axes: [1], keepdims: 0 }, outputs: { y: { shape: [1], dtype: "float32" } } };
+  const xAt = (peak) => f32(OFF.map((o) => peak + o), [1, N]);
+
+  // exp(x) / sum(exp(x)) — the left panel and the bisection both call this one function
+  async function naive(x) {
+    const e = await exp({ x }, { output: "gpu" });
+    const ei = await isinf({ x: e.y });
+    const s = await rsum({ x: e.y }, RED);
+    const S = cpu(s.y, [1]);
+    const si = await isinf({ x: S });
+    const p = await div({ a: e.y, b: S });
+    const nn = await isnan({ x: cpu(p.c, [1, N]) });
+    e.y.destroy();
+    return { p: p.c.data, nan: nn.y.data, expInf: ei.y.data, sum: s.y.data[0], sumInf: si.y.data[0] };
+  }
+  // exp(x - max) / sum(exp(x - max)) — the same arithmetic, shifted so the largest exponent is exp(0)
+  async function stable(x) {
+    const m = await rmax({ x }, RED);
+    const d = await sub({ a: x, b: cpu(m.y, [1]) }, { output: "gpu" });
+    const e = await exp({ x: d.c }, { output: "gpu" });
+    const s = await rsum({ x: e.y }, RED);
+    const p = await div({ a: e.y, b: cpu(s.y, [1]) });
+    const nn = await isnan({ x: cpu(p.c, [1, N]) });
+    d.c.destroy(); e.y.destroy();
+    return { p: p.c.data, nan: nn.y.data, max: m.y.data[0] };
+  }
+  async function library(x) {                                      // the Softmax kernel, whatever it does inside
+    const y = await smax({ x });
+    const nn = await isnan({ x: cpu(y.y, [1, N]) });
+    return { p: y.y.data, nan: nn.y.data };
+  }
+  async function viaLse(x) {                                       // exp(x - logsumexp(x)), the log-domain route
+    const l = await rlse({ x }, RED);
+    const d = await sub({ a: x, b: cpu(l.y, [1]) }, { output: "gpu" });
+    const e = await exp({ x: d.c });
+    const nn = await isnan({ x: cpu(e.y, [1, N]) });
+    d.c.destroy();
+    return { p: e.y.data, nan: nn.y.data, lse: l.y.data[0] };
+  }
+
+  const finite = (v) => Number.isFinite(v);
+  const fmt = (v) => Number.isNaN(v) ? "NaN" : !finite(v) ? (v > 0 ? "+∞" : "−∞") : v.toFixed(6);
+  const dev = (p) => { let d = 0; for (let i = 0; i < N; i++) { if (!finite(p[i])) return NaN; d = Math.max(d, Math.abs(p[i] - REF[i])); } return d; };
+  const anySet = (a) => Array.prototype.some.call(a, (v) => v);
+  const rows = (p, nan, inf) => Array.from(p, (v, i) => `<div class="pr">
+      <span class="ix">x<sub>${i}</sub></span>
+      <span class="bw"><i style="width:${(finite(v) ? Math.max(0, Math.min(1, v)) : 0) * 100}%"></i></span>
+      <span class="pv ${finite(v) ? "" : "bad"}">${fmt(v)}</span>
+      <span class="lt ${nan[i] ? "nan" : (inf && inf[i] ? "inf" : "")}"></span></div>`).join("");
+  const devLine = (d) => Number.isNaN(d) ? "worst error against the true answer <b class=\"bad\">not a number</b>"
+                                         : `worst error against the true answer <b>${d.toExponential(2)}</b>`;
+
+  // find a boundary by bisection: good is known intact, bad is known broken, the answer is the broken edge
+  async function bisect(good, bad, broken) {
+    for (let i = 0; i < 28; i++) { const mid = (good + bad) / 2; if (broken(await naive(xAt(mid)))) bad = mid; else good = mid; }
+    return bad;
+  }
+
+  let peak = 0, sweeping = false, dir = 1, B = null;
+
+  async function draw() {
+    const x = xAt(peak);
+    const n = await naive(x), s = await stable(x), l = await library(x), g = await viaLse(x);
+    $("nrows").innerHTML = rows(n.p, n.nan, n.expInf);
+    $("srows").innerHTML = rows(s.p, s.nan, null);
+    $("nfoot").innerHTML = `&Sigma; exp(x) = <b class="${finite(n.sum) ? "" : "bad"}">${fmt(n.sum)}</b>
+        <span class="lt ${n.sumInf ? "inf" : ""}"></span> &nbsp;&middot;&nbsp; ${devLine(dev(n.p))}`;
+    $("sfoot").innerHTML = `max x = <b>${s.max.toFixed(2)}</b> &nbsp;&middot;&nbsp; ${devLine(dev(s.p))}`;
+    for (const [id, r] of [["1", l], ["2", g]]) {
+      const d = dev(r.p);
+      $("mx" + id).innerHTML = Number.isNaN(d) ? `<span style="color:#f87171">broken &mdash; first value is ${fmt(r.p[0])}</span>`
+        : `p<sub>0</sub> = ${fmt(r.p[0])}, worst error ${d.toExponential(2)}`;
+      $("ml" + id).className = "lt " + (anySet(r.nan) ? "nan" : "");
+    }
+    window.__result = Object.assign({}, B, {
+      peak, calls: 18, reference: REF,
+      naive: { p: Array.from(n.p), sum: n.sum, dev: dev(n.p), sumInf: !!n.sumInf, expInf: anySet(n.expInf), broken: anySet(n.nan) },
+      stable: { p: Array.from(s.p), dev: dev(s.p), broken: anySet(s.nan) },
+      softmaxKernel: { p: Array.from(l.p), dev: dev(l.p), broken: anySet(l.nan) },
+      logSumExp: { p: Array.from(g.p), dev: dev(g.p), lse: g.lse, broken: anySet(g.nan) }
+    });
+    say(`largest input ${peak.toFixed(2)} — naive ${anySet(n.nan) ? "is not a number" : n.sumInf ? "has an infinite sum" : "still works"}, stable is off by ${dev(s.p).toExponential(1)}`);
+  }
+  function loop() {
+    if (sweeping) {
+      const near = Math.abs(peak - 88.5) < 4 || Math.abs(peak + 87.4) < 4;    // slow down over the two cliffs
+      peak += dir * (near ? 0.05 : 1.2);
+      if (peak > 110) { peak = 110; dir = -1; }
+      if (peak < -110) { peak = -110; dir = 1; }
+      $("pk").value = peak;
+    }
+    $("pkv").textContent = peak.toFixed(2);
+    draw().then(() => setTimeout(loop, 0)).catch(fail);
+  }
+
+  say("measuring the three break points on the card…");
+  const sumOverflowAt = await bisect(0, 200, (r) => !!r.sumInf);
+  const expOverflowAt = await bisect(0, 200, (r) => anySet(r.expInf));
+  const underflowAt = await bisect(0, -200, (r) => anySet(r.nan));
+  const far = await stable(xAt(1000));
+  B = { sumOverflowAt, expOverflowAt, underflowAt, stableDevAt1000: dev(far.p) };
+  $("breaks").innerHTML = `
+    <div>&Sigma; exp(x) first reaches infinity at a largest input of <b>${sumOverflowAt.toFixed(4)}</b>
+      &nbsp;<span style="color:#64748b">predicted ln(3.4028235e38) &minus; ln(${C.toFixed(7)}) = ${(Math.log(FMAX) - Math.log(C)).toFixed(4)}</span></div>
+    <div>exp(x) itself first reaches infinity at <b>${expOverflowAt.toFixed(4)}</b>
+      &nbsp;<span style="color:#64748b">predicted ln(3.4028235e38) = ${Math.log(FMAX).toFixed(4)}</span></div>
+    <div>coming from below, the naive route turns to NaN at <b>${underflowAt.toFixed(4)}</b>
+      &nbsp;<span style="color:#64748b">predicted ln(1.1754944e&minus;38) = ${Math.log(FMIN).toFixed(4)} if this card flushes subnormals to zero, ${Math.log(FSUB / 2).toFixed(2)} if it keeps them</span></div>
+    <div style="margin-top:6px">At a largest input of 1000 the stable route is still off by only <b>${dev(far.p).toExponential(2)}</b>.</div>`;
+
+  $("pk").oninput = (e) => { peak = +e.target.value; sweeping = false; $("sweep").textContent = "Sweep"; };
+  $("sweep").onclick = () => { sweeping = !sweeping; $("sweep").textContent = sweeping ? "Stop" : "Sweep"; };
+  for (const b of document.querySelectorAll("button[data-go]"))
+    b.onclick = () => { peak = +b.dataset.go; $("pk").value = peak; sweeping = false; $("sweep").textContent = "Sweep"; };
+  loop();
+} catch (e) { fail(e); }
+</script>
+</html>

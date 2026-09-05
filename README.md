@@ -1,12 +1,12 @@
 # WebGPU kernel projects
 
-Ten small web pages that run real GPU maths in a browser tab, plus the research that chose them.
+Eleven small web pages that run real GPU maths in a browser tab, plus the research that chose them.
 
 Every page is one self-contained HTML file. No npm, no bundler, no build step, no server-side code. Each page imports [`@huggingface/kernels`](https://huggingface.co/docs/kernels/index) from a CDN, calls a handful of the 200-plus WebGPU kernels that Hugging Face published on the Hub, and draws the result.
 
 **Live site — <https://az9713.github.io/webgpu-projects/>**
 
-Every page below runs in your browser with nothing to install. The ten demos are at <https://az9713.github.io/webgpu-projects/projects/>.
+Every page below runs in your browser with nothing to install. The eleven demos are at <https://az9713.github.io/webgpu-projects/projects/>.
 
 ## Where this came from
 
@@ -33,7 +33,7 @@ Then open <http://localhost:8791/projects/>.
 
 You need a browser with WebGPU: Chrome or Edge 113 and later, or Safari 26 and later. The index page names the GPU adapter it found, and says so in red if it found none.
 
-## The ten pages
+## The eleven pages
 
 Every page carries a **The science** section under the demo: the governing equation or algorithm, why it is correct, and a number you can check against the page while it runs.
 
@@ -51,16 +51,17 @@ Each result below was measured once, on an RTX 3050 laptop GPU, in Chrome. Read 
 | 08 | [Principal components without a decomposition kernel](https://az9713.github.io/webgpu-projects/projects/08-pca-power.html) | Power iteration, because the 207 kernels contain no eigensolver. 27 iterations at an eigenvalue gap of 2.0, 88 iterations at a gap of 1.1. Residual \|Cv − λv\| ≈ 1e-5. | 5 — `Gemm` `LpNormalization` `MatMul` `ReduceMean` `Sub` |
 | 09 | [Take a floating point number apart](https://az9713.github.io/webgpu-projects/projects/09-float-bits.html) | `BitCast`, `BitShift` and `BitwiseAnd` split sign, exponent and mantissa. `exp(x)` overflows at x ≥ 88.73, which is ln(3.403×10³⁸) = 88.7228. Dividing 10⁻³⁸ by 10⁵ gives 9.95×10⁻⁴⁴, a true subnormal, and this GPU returns exactly zero for it — it flushes subnormals. | 9 — `BitCast` `BitShift` `BitwiseAnd` `Concat` `Div` `Exp` `IsInf` `IsNaN` `Sub` |
 | 10 | [Slime mould: agents that build networks](https://az9713.github.io/webgpu-projects/projects/10-slime-mould.html) | 250k Physarum agents on a 512² trail map, 46 calls a step, 44 steps/s. A web forms by about step 140, then coarsens into thick veins. | 18 — `Add` `And` `Cast` `Concat` `Conv` `Cos` `Floor` `Greater` `GridSample` `Mod` `Mul` `Reshape` `ScatterElements` `Sin` `Split` `Sub` `Transpose` `Where` |
+| 11 | [Why the stable form of softmax exists](https://az9713.github.io/webgpu-projects/projects/11-stable-softmax.html) | Naive `exp(x) / Sum exp(x)` against the max-subtracted form. On this card the sum overflows at 88.2645 and `exp` at 88.7228; between the two every exponential is finite, the sum is not, and the naive panel returns eight zeros with no NaN raised, off by 0.63. The stable form stays within 5.9e-8 from -120 to 120. | 9 — `Div` `Exp` `IsInf` `IsNaN` `ReduceLogSumExp` `ReduceMax` `ReduceSum` `Softmax` `Sub` |
 
 
-Across the ten pages that is **42 distinct kernels of the 207**. Six do most of the work — `Sub` on seven pages, `Mul`, `Add` and `MatMul` on six, `ReduceMean` on five, `Transpose` on four — while 26 appear on exactly one page. The column counts kernels *loaded*, not calls made: page 10 loads 18 and issues 46 calls a step.
+Across the eleven pages that is **43 distinct kernels of the 207**. Six do most of the work — `Sub` on eight pages, `Mul`, `Add` and `MatMul` on six, `ReduceMean` on five, `Transpose` on four — while 21 appear on exactly one page. The column counts kernels *loaded*, not calls made: page 10 loads 18 and issues 46 calls a step.
 
 ## The research behind the choice
 
-Three documents sit next to the pages. They came first; the ten pages are the result.
+Three documents sit next to the pages. They came first; the eleven pages are the result.
 
 - **[`webgpu-kernels-report.html`](https://az9713.github.io/webgpu-projects/webgpu-kernels-report.html)** — the research report. Thirteen sections on how the library works, how kernels are packaged on the Hub, and what the API costs you. Sections 1–9 and 12–13 come from sources. **Section 10 is measured on one laptop, not researched**, and Section 11 documents the harness that measured it.
-- **[`webgpu-kernel-projects.html`](https://az9713.github.io/webgpu-projects/webgpu-kernel-projects.html)** — the catalogue. 121 project ideas in 18 categories, each with the exact kernel names it needs and an honest ceiling on what it can reach. Every kernel name in the file was checked against the Hub API list: 0 invalid, 179 of the 207 kernels named by at least one project. A sortable ranking table (`#scores`) scores all 121 on seven axes. The ten pages here are the top ten of that ranking, with one swap.
+- **[`webgpu-kernel-projects.html`](https://az9713.github.io/webgpu-projects/webgpu-kernel-projects.html)** — the catalogue. 121 project ideas in 18 categories, each with the exact kernel names it needs and an honest ceiling on what it can reach. Every kernel name in the file was checked against the Hub API list: 0 invalid, 179 of the 207 kernels named by at least one project. A sortable ranking table (`#scores`) scores all 121 on seven axes. The eleven pages here come from the top of that ranking. Project 104 was the one swapped out for 115 when the pages were first built; it is now page 11.
 - **[`bench.html`](https://az9713.github.io/webgpu-projects/bench.html)** — the benchmark harness for Section 10. One file, commented, run twice, reproducing its numbers within about 10%.
 
 `scratch/` holds the working files: the raw 121-project notes, the scoring script that produced the ranking, and the twenty-line table sort.
@@ -78,7 +79,7 @@ A fifth trap: `ScatterND` wants int64 indices, and no kernel on the card can pro
 
 ## Notes for anyone building on this
 
-Facts learned the hard way while building the ten pages.
+Facts learned the hard way while building the eleven pages.
 
 - Argument names are the manifest's `args` keys, lower case. `MatMul` is `a, b → y`. `Add`, `Sub` and `Mul` are `a, b → c`. `Gather` is `data, indices → output`. `Transpose` is `x → y`.
 - Attributes go in `options.attrs`: `perm`, `axes`, `to`, `direction`, `reduction`, `inverse`.
