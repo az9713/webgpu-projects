@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>The cost of coming back to JavaScript</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{background:#0b1220;border:1px solid #334155;border-radius:6px}
+  button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  table{border-collapse:collapse;font-size:.85rem}
+  td,th{border-bottom:1px solid #334155;padding:4px 10px;text-align:right}
+  th{color:#fb923c}
+  code{color:#2dd4bf}
+</style>
+
+<h1>The cost of coming back to JavaScript</h1>
+<p>A chain of eight calls, each feeding the next, at eight sizes, run twice. Orange: every call copies its result back to JavaScript and the next call uploads it again. Teal: the result stays on the card and comes back once, at the end. Each point is the median of the runs. The thin bar is the spread from fastest to slowest run. The gap between the curves is the whole lesson.</p>
+<div class="row" style="margin-bottom:12px">
+  <select id="op"><option value="matmul">MatMul, N&times;N by N&times;N, 8 in a chain</option><option value="chain">Add and Mul alternating, N&times;N, 8 in a chain</option></select>
+  <select id="runs"><option>5</option><option selected>7</option><option>11</option></select>
+  <button id="go">Run</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row">
+  <canvas id="c" width="640" height="420"></canvas>
+  <table id="t"><thead><tr><th>N</th><th>readback ms</th><th>on-card ms</th><th>ratio</th><th>MB skipped</th></tr></thead><tbody></tbody></table>
+</div>
+<p style="margin-top:14px">Readback means the result buffer is mapped and copied to a typed array after every call, then uploaded again for the next one. On-card means <code>{ output: "gpu" }</code>, so the buffer is handed straight to the next call. The last column is the bytes the on-card mode never copies. To keep the values finite over eight multiplies, B is scaled by 1/N. Run-to-run variance on this laptop is about 10%, so read a gap smaller than that as noise. Chrome picks one GPU at startup, so this measures whichever adapter Chrome holds now.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say((e.stack || e.message || e)); window.__error = String(e.message || e); };
+try {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) throw new Error("WebGPU unavailable");
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [matmul, add, mul] = await Promise.all([op("MatMul"), op("Add"), op("Mul")]);
+  say(`ready on ${adapter.info?.vendor} / ${adapter.info?.architecture}`);
+
+  const SIZES = [64, 128, 256, 512, 768, 1024, 1536, 2048];
+  const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
+
+  // one timed run: a chain of eight calls, each feeding the next. Both modes end with the
+  // final result in JavaScript. The only difference is the seven copies in between.
+  const STEPS = 8;
+  async function run(kind, N, A, B, gpu) {
+    const t0 = performance.now();
+    let x = { data: A, shape: [N, N] };
+    const held = [];
+    for (let i = 0; i < STEPS; i++) {
+      const last = i === STEPS - 1;
+      const opts = gpu && !last ? { output: "gpu" } : {};
+      const bIn = { data: B, shape: [N, N] };
+      const r = kind === "matmul" ? await matmul({ a: x, b: bIn }, opts)
+              : (i % 2 ? await mul({ a: x, b: bIn }, opts) : await add({ a: x, b: bIn }, opts));
+      const y = r.y || r.c;
+      if (gpu && !last) { held.push(y); x = y; }         // resident: hand the buffer on
+      else x = { data: y.data, shape: [N, N] };          // host: the copy just happened, re-upload next
+    }
+    held.forEach((h) => h.destroy());
+    return performance.now() - t0;
+  }
+
+  async function bench() {
+    const kind = document.getElementById("op").value, RUNS = +document.getElementById("runs").value;
+    const rows = []; window.__result = rows;
+    for (const N of SIZES) {
+      const A = new Float32Array(N * N), B = new Float32Array(N * N);
+      for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random() / N; }
+      const r = { N, cpu: [], gpu: [] };
+      for (const gpu of [false, true]) {
+        for (let i = 0; i < 2; i++) await run(kind, N, A, B, gpu);           // warm-up: the first call compiles
+        for (let i = 0; i < RUNS; i++) { r[gpu ? "gpu" : "cpu"].push(await run(kind, N, A, B, gpu)); say(`N=${N} ${gpu ? "on-card" : "readback"} run ${i + 1}/${RUNS}`); }
+      }
+      r.mb = +((STEPS - 1) * N * N * 4 / 1048576).toFixed(1);   // the copies the on-card mode skips
+      rows.push(r); draw(rows, kind);
+    }
+    say(`done: ${kind}, ${RUNS} runs per point, adapter ${adapter.info?.vendor}`);
+  }
+
+  function draw(rows, kind) {
+    const c = document.getElementById("c"), g = c.getContext("2d"), W = c.width, H = c.height, L = 60, Bm = 40, T = 20, R = 20;
+    g.clearRect(0, 0, W, H);
+    const all = rows.flatMap((r) => [...r.cpu, ...r.gpu]);
+    const ymin = Math.max(0.05, Math.min(...all)), ymax = Math.max(...all) * 1.2;
+    const xs = (N) => L + (Math.log2(N) - 6) / 5 * (W - L - R);
+    const ys = (ms) => H - Bm - (Math.log10(ms) - Math.log10(ymin)) / (Math.log10(ymax) - Math.log10(ymin)) * (H - T - Bm);
+    g.strokeStyle = "#334155"; g.fillStyle = "#94a3b8"; g.font = "12px system-ui"; g.textAlign = "center";
+    for (const N of SIZES) { g.beginPath(); g.moveTo(xs(N), T); g.lineTo(xs(N), H - Bm); g.stroke(); g.fillText(N, xs(N), H - Bm + 16); }
+    g.textAlign = "right";
+    for (let p = Math.floor(Math.log10(ymin)); p <= Math.ceil(Math.log10(ymax)); p++) {
+      const v = 10 ** p; if (v < ymin || v > ymax) continue;
+      g.beginPath(); g.moveTo(L, ys(v)); g.lineTo(W - R, ys(v)); g.stroke(); g.fillText(v + " ms", L - 6, ys(v) + 4);
+    }
+    g.fillText("size N", W - R, H - 4); g.textAlign = "left";
+    for (const [key, col] of [["cpu", "#fb923c"], ["gpu", "#2dd4bf"]]) {
+      g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2; g.beginPath();
+      rows.forEach((r, i) => { const y = ys(median(r[key])); i ? g.lineTo(xs(r.N), y) : g.moveTo(xs(r.N), y); });
+      g.stroke(); g.lineWidth = 1;
+      for (const r of rows) {
+        const x = xs(r.N); g.beginPath(); g.moveTo(x, ys(Math.min(...r[key]))); g.lineTo(x, ys(Math.max(...r[key]))); g.stroke();
+        g.beginPath(); g.arc(x, ys(median(r[key])), 3.5, 0, 7); g.fill();
+      }
+    }
+    g.fillStyle = "#fb923c"; g.fillText("readback after every call", L + 10, T + 14);
+    g.fillStyle = "#2dd4bf"; g.fillText("result stays on the card", L + 10, T + 30);
+    document.querySelector("#t tbody").innerHTML = rows.map((r) => {
+      const a = median(r.cpu), b = median(r.gpu);
+      return `<tr><td>${r.N}</td><td>${a.toFixed(2)}</td><td>${b.toFixed(2)}</td><td>${(a / b).toFixed(2)}&times;</td><td>${r.mb}</td></tr>`;
+    }).join("");
+  }
+  document.getElementById("go").onclick = () => bench().catch(fail);
+  bench().catch(fail);
+} catch (e) { fail(e); }
+</script>
+</html>

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>WebGPU Kernels — What They Are and What You Can Build With Them</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --text2:#cbd5e1;
+    --muted:#94a3b8; --accent:#fb923c; --accent2:#2dd4bf;
+    --border:#1e293b; --border2:#334155;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text2);
+    font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:48px 20px 96px}
+  header{border-bottom:1px solid var(--border2); padding-bottom:28px; margin-bottom:40px}
+  h1{color:var(--text); font-size:2.1rem; line-height:1.25; margin:0 0 12px; letter-spacing:-.02em}
+  .sub{color:var(--muted); font-size:1rem; margin:0}
+  h2{color:var(--accent); font-size:1.35rem; margin:56px 0 14px; letter-spacing:-.01em}
+  h3{color:var(--accent2); font-size:1.05rem; margin:32px 0 10px}
+  p{margin:0 0 16px}
+  a{color:var(--accent2)}
+  a:hover{color:var(--accent)}
+  code{
+    background:var(--card); color:var(--text); border:1px solid var(--border2);
+    border-radius:4px; padding:1px 5px; font-size:.88em;
+    font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  }
+  pre{
+    background:var(--card); border:1px solid var(--border2); border-radius:8px;
+    padding:16px 18px; overflow-x:auto; margin:0 0 20px;
+    font-size:.85rem; line-height:1.6; color:var(--text);
+    font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  }
+  pre code{background:none; border:0; padding:0; font-size:1em}
+  .card{
+    background:var(--card); border:1px solid var(--border2);
+    border-left:3px solid var(--accent); border-radius:8px;
+    padding:18px 20px; margin:0 0 24px;
+  }
+  .card.teal{border-left-color:var(--accent2)}
+  .card p:last-child{margin-bottom:0}
+  .card .label{
+    display:block; color:var(--accent); font-size:.72rem; letter-spacing:.12em;
+    text-transform:uppercase; margin-bottom:8px; font-weight:600;
+  }
+  .card.teal .label{color:var(--accent2)}
+  table{border-collapse:collapse; width:100%; margin:0 0 22px; font-size:.92rem}
+  th,td{border:1px solid var(--border2); padding:9px 12px; text-align:left}
+  th{background:var(--card); color:var(--text); font-weight:600}
+  td.num,th.num{text-align:right; font-variant-numeric:tabular-nums}
+  .win{color:var(--accent2); font-weight:600}
+  ul{margin:0 0 18px; padding-left:22px}
+  li{margin-bottom:8px}
+  figcaption,.note{color:var(--muted); font-size:.88rem}
+  hr{border:0; border-top:1px solid var(--border2); margin:48px 0}
+  footer{color:var(--muted); font-size:.85rem; border-top:1px solid var(--border2); padding-top:24px; margin-top:64px}
+  .toc{background:var(--card); border:1px solid var(--border2); border-radius:8px; padding:18px 22px; margin-bottom:8px}
+  .toc ol{margin:0; padding-left:20px}
+  .toc li{margin-bottom:4px}
+  html{scroll-behavior:smooth}
+  .topnav{position:sticky; top:0; z-index:10; background:rgba(15,23,42,.96);
+          backdrop-filter:blur(8px); border-bottom:1px solid var(--border2)}
+  .topnav .inner{max-width:1080px; margin:0 auto; display:flex; gap:1px;
+                 overflow-x:auto; padding:7px 12px; scrollbar-width:none}
+  .topnav .inner::-webkit-scrollbar{height:0}
+  .topnav a{color:var(--muted); text-decoration:none; font-size:.75rem; white-space:nowrap;
+            padding:5px 7px; border-radius:5px; transition:background .12s,color .12s}
+  .topnav a:hover{color:var(--text); background:var(--border2)}
+  .topnav a.home{color:var(--accent); font-weight:600}
+  h2{scroll-margin-top:64px}
+  h3{scroll-margin-top:64px}
+</style>
+</head>
+<body>
+<nav class="topnav" aria-label="Section navigation">
+  <div class="inner">
+    <a href="#top" class="home">Top</a>
+    <a href="#one">1 Intro</a>
+    <a href="#op">2 Ops</a>
+    <a href="#template">3 Templates</a>
+    <a href="#repo">4 Repo</a>
+    <a href="#api">5 API</a>
+    <a href="#speed">6 Speed</a>
+    <a href="#catalog">7 Catalog</a>
+    <a href="#fleet">8 Fleet</a>
+    <a href="#projects">9 Projects</a>
+    <a href="#laptop">10 Laptop</a>
+    <a href="#method">11 Method</a>
+    <a href="#limits">12 Limits</a>
+    <a href="#sources">13 Sources</a>
+  </div>
+</nav>
+
+<div class="wrap" id="top">
+
+<header>
+  <h1>WebGPU Kernels: What They Are, and What You Can Actually Build With Them</h1>
+  <p class="sub">A research report on Hugging Face's <code>@huggingface/kernels</code> release — 207 open-source WebGPU kernels, the JavaScript loader, the Fleet benchmark, and where they fit in real projects. Compiled 4 September 2026.</p>
+</header>
+
+<div class="toc">
+  <ol>
+    <li><a href="#one">The one-sentence version</a></li>
+    <li><a href="#op">An operation is the recipe; a kernel is the recipe cooked for one kitchen</a></li>
+    <li><a href="#template">Why they ship templates instead of finished shaders</a></li>
+    <li><a href="#repo">What is actually inside a kernel repository</a></li>
+    <li><a href="#api">Using one: the whole API in five minutes</a></li>
+    <li><a href="#speed">How fast are they, honestly</a></li>
+    <li><a href="#catalog">What the 207 kernels cover</a></li>
+    <li><a href="#fleet">Fleet, and why your GPU is worth something to them</a></li>
+    <li><a href="#projects">Projects worth building with this</a></li>
+    <li><a href="#laptop">This laptop, measured</a></li>
+    <li><a href="#method">How these tests were run</a></li>
+    <li><a href="#limits">Limits and gaps you should know before you start</a></li>
+    <li><a href="#sources">Sources</a></li>
+  </ol>
+</div>
+
+<h2 id="one">1. The one-sentence version</h2>
+
+<p>Hugging Face published 207 hand-optimised GPU programs that run inside a web browser, put each one on the Hub as its own versioned repository, and shipped a small JavaScript library that downloads one and turns it into a normal <code>async</code> function you call with typed arrays. You get GPU-speed maths in a web page without writing a single line of shader code, and without sending any data to a server.</p>
+
+<p>Everything is Apache-2.0 licensed. The library is <code>@huggingface/kernels</code> on npm. The kernels live at <a href="https://huggingface.co/webgpu-kernels">huggingface.co/webgpu-kernels</a>. The authors are Nico Martin and Joshua Lochner (Xenova) on Hugging Face's WebAI team.</p>
+
+<h2 id="op">2. An operation is the recipe; a kernel is the recipe cooked for one kitchen</h2>
+
+<p>This is the distinction the whole release rests on, so it is worth getting right before anything else.</p>
+
+<p>A machine learning model, once you strip away the framework, is a graph of small mathematical steps. Each step is an <strong>operation</strong>. An operation says <em>what</em> should happen and nothing about how. Addition is an operation: it takes a tensor <code>A</code> and a tensor <code>B</code>, and produces <code>C = A + B</code>. That description is hardware-free. It is true on a phone, a laptop, and a data-centre card.</p>
+
+<p>A <strong>kernel</strong> is one implementation of that operation for one kind of hardware. The same addition needs different code depending on where it runs. On an NVIDIA card you would write a CUDA kernel. On Apple silicon, a Metal kernel. In a browser you use the WebGPU API, and the language you write in is WGSL — the WebGPU Shading Language. Same recipe, different kitchen, different code.</p>
+
+<div class="card teal">
+  <span class="label">Analogy</span>
+  <p>The operation is "make a béchamel". The kernel is the version of that recipe written for <em>your</em> stove — gas, induction, or a camping burner. The dish is identical. The instructions are not, and the difference between a good set of instructions and a bad one is minutes of your life.</p>
+</div>
+
+<p>Why does that difference matter so much? Because a model run is thousands of these steps in sequence. If each individual operation is 2x faster, the whole model is roughly 2x faster. Kernels are the floor of the stack. Nothing built on top of them — no runtime, no clever scheduler — can be faster than the operations it dispatches. That is the argument for starting here rather than higher up.</p>
+
+<h2 id="template">3. Why they ship templates instead of finished shaders</h2>
+
+<p>Here is the part that surprised me, and it is the most interesting engineering decision in the release.</p>
+
+<p>The repositories do not contain <code>.wgsl</code> files. They contain <code>.wgsl.jinja</code> files — Jinja templates, the same templating language Python people use for HTML. The finished shader is not written by a human and shipped. It is <em>generated in your browser, at load time, for your specific GPU and your specific input shapes</em>.</p>
+
+<p>The reason is that "the fastest kernel" is not a fixed thing. It depends on the GPU, the driver, the browser, the WebGPU features that device exposes, the data type, and the shape of the data you passed in this call. Two shaders that produce byte-identical output can differ wildly in speed on the same machine. Workgroup size, memory access pattern, vectorisation, and data type all move the number. So instead of guessing one winner, they ship the building blocks and let the loader assemble the right one on the spot.</p>
+
+<p>This is the actual template for the vectorised addition path in <code>ai.onnx.Add</code>, fetched from the repository. The <code>{% %}</code> and <code>{{ }}</code> markers are the parts that get filled in or switched off before the shader is compiled:</p>
+
+<pre><code>{% if usesF16 %}
+enable f16;
+{% endif %}
+{{ env.wgsl.resourceDeclarations }}
+
+@compute @workgroup_size({{ tunables.WORKGROUP_SIZE }})
+fn main(@builtin(global_invocation_id) gid: vec3&lt;u32&gt;, @builtin(num_workgroups) nwg: vec3&lt;u32&gt;) {
+  // 2D-folded flat index: gid.y carries the high bits when the element count exceeds the
+  // maxComputeWorkgroupsPerDimension limit (the dispatch caps x and spills the rest into y).
+  let i = gid.x + gid.y * nwg.x * {{ tunables.WORKGROUP_SIZE }}u;
+  if (i &gt;= params.count) {
+    return;
+  }
+  let av = a[i];
+  let bv = b[i];
+{% if scalar == "i32" or scalar == "u32" %}
+  let r = av + bv;
+{% if source.cDtype == "int8" %}
+  c[i] = (r &lt;&lt; vec4&lt;u32&gt;(24u)) &gt;&gt; vec4&lt;u32&gt;(24u);
+{% elif source.cDtype == "uint8" %}
+  c[i] = r &amp; vec4&lt;u32&gt;(0xFFu);
+{% else %}
+  c[i] = r;
+{% endif %}
+{% elif scalar == "f16" %}
+  c[i] = vec4&lt;f16&gt;(vec4&lt;f32&gt;(av) + vec4&lt;f32&gt;(bv));
+{% else %}
+  c[i] = av + bv;
+{% endif %}
+}</code></pre>
+
+<p>Read past the syntax and it is doing something simple: add two numbers, but write the addition differently for 8-bit integers, for 16-bit floats, and for everything else, and pick the workgroup size from a tunable rather than hard-coding it.</p>
+
+<p>The decision of <em>which</em> template to use is data, not code. It lives in <code>manifest.json</code> as a list of variants with conditions. This is the first variant of <code>ai.onnx.Add</code>:</p>
+
+<pre><code>"variants": [
+  {
+    "id": "same_shape_vec4",
+    "priority": 20,
+    "when": [
+      "sameShape(shapes.A, shapes.C)",
+      "sameShape(shapes.B, shapes.C)",
+      "numel(shapes.C) &gt; 0",
+      "numel(shapes.C) % 4 == 0",
+      "f16Ok(dtypes.T)"
+    ],
+    "constants": {
+      "scalar": "dtypes.T",
+      "vectorScalar": "\"vec4&lt;\" ~ dtypes.T ~ \"&gt;\"",
+      "usesF16": "dtypes.T == \"f16\""
+    },
+    "passes": [ { "id": "main", "name": "Add.vec4",
+      "source": { "shader": "binary-vec4.wgsl.jinja", ... } } ]
+  },
+  ...
+]</code></pre>
+
+<p>In plain terms: <em>if</em> both inputs are the same shape as the output, and the element count divides evenly by four, and the data type is workable, then use the four-at-a-time vectorised shader, and prefer it (priority 20) over the more general fallbacks. The published Add kernel carries variants for equal shapes, vectorised broadcasting, scalar processing, and general broadcasting. <code>ai.onnx.MatMul</code> carries fourteen shader templates, including split-K reductions, tiled register variants, matrix-vector paths, and a subgroup-matrix path for devices that expose that feature.</p>
+
+<p>You never see any of this. You call <code>add(...)</code> and the loader picks. But it is worth knowing it is there, because it explains why these are faster than a general-purpose implementation: a general implementation has to be correct for every case, so it takes the slow path for all of them.</p>
+
+<h2 id="repo">4. What is actually inside a kernel repository</h2>
+
+<p>Every kernel is its own Hub repo with its own card, like a model. Five kinds of file matter:</p>
+
+<ul>
+  <li><code>manifest.json</code> — the contract, and the source of truth. Inputs, outputs, attributes, allowed data types, how the output shape is derived, and the variant list shown above.</li>
+  <li><code>metadata.json</code> — identifier, digests, provenance.</li>
+  <li><code>test.json</code> — correctness cases, so any implementation can be checked against expected behaviour. For <code>ai.onnx.Add</code> this file is 31 KB.</li>
+  <li><code>bench.json</code> — the benchmark and tuning cases used to evaluate the kernel.</li>
+  <li><code>*.wgsl.jinja</code> — the parameterised shaders.</li>
+</ul>
+
+<div class="card">
+  <span class="label">Non-obvious, and it will trip you up</span>
+  <p>Those files are not on the <code>main</code> branch. On <code>main</code> you get only <code>README.md</code> and <code>.gitattributes</code>. The real artifacts live on a branch named <code>v1</code>, under <code>build/webgpu/</code>. So the raw URL for the Add manifest is <code>https://huggingface.co/kernels/webgpu-kernels/ai.onnx.Add/raw/v1/build/webgpu/manifest.json</code> — note the <code>/kernels/</code> path segment too, because a kernel is its own repository type on the Hub, not a model. The plain model-style URL returns an error.</p>
+</div>
+
+<p>The manifest is worth a look even if you never intend to write WGSL, because it is readable. It tells you that <code>ai.onnx.Add</code> is ONNX <code>sinceVersion</code> 14, accepts <code>float32</code>, <code>float16</code>, <code>int32</code>, <code>uint32</code>, <code>int8</code> and <code>uint8</code>, that the output shape is <code>broadcastShape(shapes.A, shapes.B)</code>, and that the default workgroup size is 256. You can understand what a kernel does without reading a shader.</p>
+
+<p>The kernel card for <code>ai.onnx.MatMul</code> is equally direct. It documents that the kernel supports float16, float32, int32 and uint32; that all legal rank-1 to rank-4 combinations are implemented; that rank-5 works only when <em>both</em> inputs are rank 5; and that some variants need the <code>subgroup-matrix</code>, <code>shader-f16</code> or <code>subgroups</code> device features — which are per-route capabilities, not requirements for the whole package.</p>
+
+<h2 id="api">5. Using one: the whole API in five minutes</h2>
+
+<p>Install it. Note the <code>@preview</code> tag — this is an early preview, and the published version at the time of writing is <code>0.0.1-preview.1</code>:</p>
+
+<pre><code>npm install @huggingface/kernels@preview</code></pre>
+
+<p>You need a browser with WebGPU. Check for it with <code>"gpu" in navigator</code>. Availability depends on browser, operating system, GPU and driver, so treat it as a feature you detect, not a guarantee.</p>
+
+<p>The pattern is always the same. Ask for a kernel by repo ID and contract version. You get back an async function. Call it with named inputs, each one a typed array plus a shape:</p>
+
+<pre><code>import { getKernel } from "@huggingface/kernels";
+
+const add = await getKernel("webgpu-kernels/ai.onnx.Add", { version: 1 });
+
+const { c } = await add({
+  a: { data: new Float32Array([1, 2, 3, 4, 5, 6]), shape: [2, 3] },
+  b: { data: new Float32Array([10, 20, 30]),       shape: [3]    },
+});</code></pre>
+
+<p>The second input is broadcast across the first dimension, so <code>c</code> comes back with shape <code>[2, 3]</code>. You did not tell it that. The loader read the output shape rule out of the manifest, worked out the result shape and data type from your inputs, and allocated the output for you.</p>
+
+<p>Matrix multiplication is the same call with a different repo ID:</p>
+
+<pre><code>const kernel = await getKernel("webgpu-kernels/ai.onnx.MatMul", { version: 1 });
+const { y } = await kernel({
+  a: { data: aData, shape: [3, 5] },
+  b: { data: bData, shape: [5, 4] },
+});
+console.log(y.data, y.shape, y.dtype);</code></pre>
+
+<p>Adding six floats on a GPU is deliberately silly — the round trip to the device costs far more than the arithmetic. The point of the tiny example is that the call shape does not change when you move to the operations where the GPU genuinely wins.</p>
+
+<h3>The four options that matter</h3>
+
+<p><strong><code>version: 1</code></strong> selects version 1 of the published <em>kernel contract</em>. It is not an ONNX opset, not an operator's <code>since_version</code>, and not a model revision — keeping those separate is what lets your JavaScript stay stable while the shaders underneath get rewritten. Practically, <code>version: 1</code> follows the repository's <code>v1</code> branch, and that branch moves as fixes land.</p>
+
+<p><strong><code>revision</code></strong> takes a 40-character commit hash instead. Use it when you want bytes that can never change under you — a reproducible build, a paper, anything you will be asked to explain in six months.</p>
+
+<p><strong><code>{ output: "gpu" }</code></strong> keeps the result on the device instead of copying it back to JavaScript. This is the one that turns a toy into a pipeline. Chained operations — multiply, then add a bias, then normalise, then softmax — should never round-trip through CPU memory between steps. You own those GPU buffers, and you release them with <code>destroy()</code>.</p>
+
+<p><strong><code>{ trustRemoteCode: true }</code></strong> is required to load a kernel from any publisher other than the <code>webgpu-kernels</code> organisation. The reasoning is blunt and correct: a kernel is code that runs on your GPU. Loading someone else's is opt-in, deliberately.</p>
+
+<h3>Data types</h3>
+
+<p>You pass the natural typed array — <code>Float32Array</code>, <code>Uint8Array</code>, <code>Float16Array</code>, and so on — and the library widens it to the right WebGPU storage form. Results come back the same way, with one wrinkle worth remembering: float16 comes back as a <code>Float16Array</code> where the browser provides one, and otherwise as raw binary16 words packed into a <code>Uint16Array</code>. If you support float16, handle both.</p>
+
+<h2 id="speed">6. How fast are they, honestly</h2>
+
+<p>Hugging Face compared their collection against ONNX Runtime Web (build <code>1.30.0-dev.20260826-b1f76d586a</code>) on an Apple M4 GPU. They started with 1,756 test cases across all 207 operations, and kept the 809 cases where both sides produced matching outputs and reliable timings.</p>
+
+<p>Across those 809 comparisons: <strong>2.57x faster by geometric mean</strong>, <strong>1.90x faster at the median</strong>, with 629 wins, 176 losses and 4 ties. Four familiar operations:</p>
+
+<table>
+  <thead>
+    <tr><th>Operation</th><th class="num">Cases</th><th class="num">HF WebGPU kernel</th><th class="num">ORT WebGPU</th><th class="num">Speedup</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Add</td><td class="num">5</td><td class="num">0.064 ms</td><td class="num">0.227 ms</td><td class="num win">3.52x</td></tr>
+    <tr><td>MatMul</td><td class="num">29</td><td class="num">0.115 ms</td><td class="num">0.131 ms</td><td class="num win">1.14x</td></tr>
+    <tr><td>Softmax</td><td class="num">12</td><td class="num">0.114 ms</td><td class="num">0.240 ms</td><td class="num win">2.11x</td></tr>
+    <tr><td>LayerNormalization</td><td class="num">6</td><td class="num">0.061 ms</td><td class="num">0.135 ms</td><td class="num win">2.22x</td></tr>
+  </tbody>
+</table>
+
+<p>Two outliers are worth naming because they show what a specialised kernel does when a general one falls off a cliff. A bilinear Einsum case — the contraction <code>i,ij,j</code> at size 4096 — ran in 0.136 ms against 1,396 ms for ORT WebGPU. That is more than <strong>10,000x</strong>. A row-wise CumSum over a <code>[256, 4096]</code> tensor ran in 0.016 ms against 4.784 ms, about <strong>301x</strong>.</p>
+
+<div class="card">
+  <span class="label">Read the caveats, they are load-bearing</span>
+  <p>These are not the speedups to expect everywhere. They are the cases where a general implementation hit a pathological slow path, and Hugging Face say so themselves.</p>
+  <p>Four more limits, all stated in the blog post. The timings cover work done <em>on the GPU only</em> — loading kernels, creating sessions, uploading inputs, compiling shaders and reading results back are all excluded. Very short workloads are hard to measure and small cases can sit entirely in GPU cache. These are individual operations, not whole models, so you cannot multiply them out into an end-to-end model speedup. And it is one device: an M4. Your Windows machine will produce a different table.</p>
+</div>
+
+<p>Hugging Face also say they are working with the ONNX Runtime team to upstream the improvements, which means some of this gap is expected to close from the other side.</p>
+
+<p>A different kind of number comes from the launch video's demo. A 1,024 × 1,024 grid — over a million cells — with 128 waves crossing it, where every cell's RGBA colour comes out of a single matrix multiplication, runs at about 60 frames per second. That 60 is a ceiling imposed by <code>requestAnimationFrame</code>, not by the GPU; the presenter estimates the maths itself could sustain around 400 fps. The same calculation in plain JavaScript drops to roughly 6.7 fps.</p>
+
+<h2 id="catalog">7. What the 207 kernels cover</h2>
+
+<p>I pulled the full list from the Hub API. It splits into two families:</p>
+
+<ul>
+  <li><strong>175 <code>ai.onnx.*</code> kernels</strong> — the standard ONNX operator set. Everything from <code>Abs</code> and <code>Add</code> through <code>Conv</code>, <code>Gemm</code>, <code>MatMul</code>, <code>Resize</code>, <code>TopK</code>, the whole <code>Reduce*</code> family, <code>DFT</code>, <code>STFT</code>, <code>GridSample</code>, <code>NonMaxSuppression</code>, and the quantisation operators <code>QuantizeLinear</code>, <code>DequantizeLinear</code>, <code>DynamicQuantizeLinear</code>, <code>MatMulInteger</code> and <code>QLinearMatMul</code>.</li>
+  <li><strong>32 <code>com.microsoft.*</code> kernels</strong> — the ONNX Runtime contributed operators, which is where the fused and LLM-specific work lives.</li>
+</ul>
+
+<p>If your interest is language models specifically, the ones to know are <code>ai.onnx.Attention</code>, <code>com.microsoft.MultiHeadAttention</code>, <code>com.microsoft.GroupQueryAttention</code>, <code>com.microsoft.PagedAttention</code>, <code>com.microsoft.SparseAttention</code>, <code>ai.onnx.RotaryEmbedding</code> and its Gemma and multimodal variants, <code>ai.onnx.RMSNormalization</code>, <code>ai.onnx.SwiGLU</code>, <code>com.microsoft.MoE</code> and <code>com.microsoft.QMoE</code>, and the quantised matmul family <code>com.microsoft.MatMulNBits</code>, <code>MatMulNBitsMlp</code>, <code>MatMulNBitsQkv</code> and <code>MatMulBnb4</code>. That is not a random assortment. That is the ingredient list for running a modern quantised transformer in a browser tab.</p>
+
+<p>The kernels also appear on the Hub's general <a href="https://huggingface.co/kernels?platform=webgpu&amp;sort=trending">Kernels page</a>, alongside kernels for CUDA, ROCm and Metal, filterable and sortable like any other Hub artifact.</p>
+
+<h2 id="fleet">8. Fleet, and why your GPU is worth something to them</h2>
+
+<p><a href="https://webgpu-kernels-fleet.hf.space/">Fleet</a> is a web page that loads the kernels from the Hub, runs the correctness and benchmark cases on whatever GPU you happen to have, and scores it. You see how your hardware performs. With your consent, the run also contributes evidence back privately.</p>
+
+<p>The honest reason they built it is stated plainly in the video: the team optimised these kernels on the devices they had — their own machines, "devices we found in our homes". There are thousands of GPU, driver and browser combinations in the world, and edge cases they cannot have anticipated. Every submitted run can reveal an incorrect result, a pathologically slow path, or a variant-selection rule that picks badly on some specific chip.</p>
+
+<p>Concretely: a Windows machine with a discrete or integrated GPU that is not an Apple M-series part is exactly the kind of data point their benchmark table does not have. Opening the page and pressing run is a two-minute, zero-code contribution to an open-source project.</p>
+
+<h2 id="projects">9. Projects worth building with this</h2>
+
+<p>Now the useful part. Below are five directions, ordered roughly from "works today, small effort" to "ambitious". I have tried to be honest about which are real and which are still waiting on missing pieces.</p>
+
+<h3>a. Heavy visual or numerical work in a page that currently crawls</h3>
+
+<p>This is the most immediately usable idea, and it has nothing to do with AI. If you have any web page doing large amounts of arithmetic per frame — a simulation, a generative animation, a large data grid, an image filter, a spectrogram — one kernel can replace the loop.</p>
+
+<p>The wave demo is the proof. Over a million pixels, coloured every frame, using exactly <strong>one</strong> kernel: <code>ai.onnx.MatMul</code>. Prepare the data, do one matrix multiply, get RGBA values for the whole grid. 60 fps against about 6.7 fps for the same maths in plain JavaScript. There is no model, no inference, no ONNX file involved — just the observation that a matrix multiply is a very general hammer and the GPU is very good at it.</p>
+
+<p>Signal processing has an easy entry too: <code>ai.onnx.DFT</code> and <code>ai.onnx.STFT</code> are in the collection, so audio analysis in the browser is a kernel call rather than a library.</p>
+
+<h3>b. Building blocks for private, local inference</h3>
+
+<p>The video's second demo implements a transformer attention mechanism in roughly 20 lines of JavaScript, using four kernels: <code>MatMul</code>, <code>Softmax</code>, <code>Add</code> and <code>LayerNormalization</code>. It loads real weights — the presenter says "tiny bird", which is almost certainly TinyBERT — and draws a heat map where each row shows how strongly one token attends to another. Bright cell, strong link.</p>
+
+<p>That is a genuinely good learning artifact and a genuinely good demo: it shows attention working, on real weights, on your own GPU, with nothing leaving the machine. If you want a piece to explain how transformers work to someone, twenty lines they can read beats a diagram.</p>
+
+<div class="card">
+  <span class="label">The gap you need to know about</span>
+  <p>There is <strong>no model runner in this release</strong>. You cannot point <code>@huggingface/kernels</code> at a <code>.onnx</code> file and get a working model. The blog post is explicit that connecting these kernels to "higher-level model tooling" is future work — this is the bottom layer, published first, on purpose.</p>
+  <p>If you want to run a whole model in a browser today, the answer is still Transformers.js, which uses ONNX Runtime Web. These kernels sit <em>underneath</em> that layer, and Hugging Face are upstreaming improvements to ONNX Runtime so the benefit reaches it eventually. Build with kernels when you want a specific computation; use Transformers.js when you want a model.</p>
+</div>
+
+<h3>c. A small tool that offloads one expensive computation to the browser GPU</h3>
+
+<p>The interesting property of this library for tooling work is that it removes the setup cost of GPU compute. There is no CUDA install, no driver version, no Python environment, no build step — a web page, a browser with WebGPU, and an npm package. On Windows that matters more than it does elsewhere, because the usual local-GPU path involves the whole CUDA toolchain.</p>
+
+<p>Concrete shapes this could take: embedding similarity search over a few thousand vectors, done as one <code>MatMul</code> plus a <code>TopK</code>, in a page. A clustering or dimensionality-reduction step in a data-inspection tool. A cosine-similarity matrix over documents. Any of these are a handful of kernel calls and, with <code>{ output: "gpu" }</code>, they chain without leaving the device.</p>
+
+<p>Given that you build on the Claude Code platform, the natural version of this is a self-contained HTML artifact that does real GPU compute — a page that loads a kernel from the Hub, runs a heavy calculation locally on the viewer's own hardware, and shows the result. No server, no API key, no data leaving the browser. That constraint set is unusual and it is exactly what this library gives you.</p>
+
+<h3>d. Contribute without writing code</h3>
+
+<p>Run Fleet on every machine you have access to and submit the results. It costs two minutes, and it is the single most useful thing a person with unusual hardware can do for this project right now. Their benchmark table is one M4. It should not be.</p>
+
+<h3>e. Read them as reference implementations</h3>
+
+<p>Hugging Face explicitly offer the kernels as reference material for people writing their own WebGPU code or building their own runtimes. If you have ever wanted to understand how a fast matrix multiply is actually structured, <code>ai.onnx.MatMul</code> ships fourteen shader templates with names that describe the strategy — tiled, register-tiled, split-K, matrix-vector, subgroup-matrix — and a manifest that spells out the conditions under which each one is chosen. That is a curriculum, not just a codebase, and it is Apache-2.0.</p>
+
+<h2 id="laptop">10. This laptop, measured</h2>
+
+<p>Everything above this point is other people's numbers. This section is measured on the machine the report was written on, on 4 September 2026.</p>
+
+<h3>The hardware</h3>
+
+<ul>
+  <li>HP Victus 15-fa0xxx — Intel Core i5-12450H, 8 cores, 31.7 GB RAM, Windows 11 Home</li>
+  <li><strong>NVIDIA GeForce RTX 3050 Laptop GPU</strong>, 4 GB, driver 32.0.15.9282</li>
+  <li><strong>Intel UHD Graphics</strong>, architecture gen-12lp, driver 32.0.101.5542</li>
+  <li>Chrome 152, WebGPU available</li>
+</ul>
+
+<h3>The method</h3>
+
+<p>A single local HTML page, served over <code>localhost</code>, importing the library straight from a CDN. Correctness first: <code>ai.onnx.Relu</code> on <code>[-1, 0, 2, -3]</code> returned <code>[0, 0, 2, 0]</code>. Then <code>ai.onnx.MatMul</code> on square float32 matrices, with warm-up runs discarded and the median reported.</p>
+
+<div class="card teal">
+  <span class="label">Useful finding — no build step needed</span>
+  <p>The package imports directly as an ES module from jsDelivr. There is no npm install, no bundler, and no build tooling. One HTML file is a complete, working project:</p>
+  <pre><code>const m = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+const mm = await m.getKernel("webgpu-kernels/ai.onnx.MatMul", { version: 1 });</code></pre>
+  <p>The import fails on pages with a restrictive Content-Security-Policy — it was blocked on the Fleet page and worked immediately from <code>localhost</code>.</p>
+</div>
+
+<h3>Chrome does not pick the fast GPU by itself</h3>
+
+<p>On the first run, all three power preferences — <code>high-performance</code>, <code>low-power</code> and the default — returned the same adapter: <code>intel / gen-12lp</code>. The RTX 3050 was never touched. This is not a bug in the library. Chrome binds one adapter when its GPU process starts, so <code>powerPreference</code> cannot switch cards afterwards. The fix is a Windows setting, and it needs a full Chrome restart:</p>
+
+<p>The fix is a Windows per-application graphics preference. Nobody remembers this path, so here it is in full. It is written for Windows 11 build 26200 (September 2026); older builds differ, and that difference is noted at step 6.</p>
+
+<div class="card">
+  <span class="label">Click path — point Chrome at the discrete GPU</span>
+  <ol>
+    <li>Press <strong>Win + I</strong> to open Settings.</li>
+    <li>In the left sidebar, select <strong>System</strong>.</li>
+    <li>Select <strong>Display</strong>.</li>
+    <li>Scroll to the bottom of the Display page. Under <em>Related settings</em>, select <strong>Graphics</strong>. The breadcrumb should now read <em>System &gt; Display &gt; Graphics</em>.</li>
+    <li>Find <strong>Google Chrome</strong> in the app list. If it is not listed: select <strong>Add desktop app</strong>, then <strong>Browse</strong>, then choose <code>C:\Program Files\Google\Chrome\Application\chrome.exe</code>.</li>
+    <li>Click the <strong>Google Chrome</strong> row to expand it. You will see a <strong>GPU preference</strong> line with a dropdown that reads <em>Let Windows decide</em>.
+      <br><span class="note">On older Windows 11 and Windows 10 builds there is no inline dropdown. Instead the row shows an <strong>Options</strong> button; click it, choose the preference in the dialog, then click <strong>Save</strong>.</span></li>
+    <li>Open the dropdown. It lists <em>Let Windows decide</em>, <em>Power saving</em> and <em>High performance</em>. <em>Power saving</em> is the integrated Intel chip. <em>High performance</em> is the NVIDIA card.</li>
+    <li>Select <strong>High performance</strong>. The current build applies it immediately — there is no <em>Save</em> button.</li>
+    <li>Quit Chrome completely. Closing every window is not enough: check the notification area (the tray, next to the clock) for a Chrome icon and quit that too. The preference is only read when the browser's GPU process starts.</li>
+    <li>Start Chrome again.</li>
+  </ol>
+</div>
+
+<p>The setting is stored per executable in the registry, under <code>HKCU\Software\Microsoft\DirectX\UserGpuPreferences</code>, as one value per application path with the data <code>GpuPreference=2</code> for high performance (<code>1</code> is power saving). Reading that key is the quickest way to confirm the preference exists without opening Settings.</p>
+
+<p>To verify the browser actually changed cards, open any page over <code>https</code> or <code>localhost</code>, open DevTools with <strong>F12</strong>, and run this in the Console:</p>
+
+<pre><code>(await navigator.gpu.requestAdapter({ powerPreference: "high-performance" })).info</code></pre>
+
+<p>Before the change it reported <code>vendor: "intel", architecture: "gen-12lp"</code>. After the change and a restart it reported <code>vendor: "nvidia", architecture: "ampere"</code>. If it still says <code>intel</code>, Chrome did not fully quit — return to step 9.</p>
+
+<h3>Result 1: the discrete GPU barely helped</h3>
+
+<table>
+  <thead><tr><th>Adapter</th><th class="num">1024×1024 MatMul, median</th></tr></thead>
+  <tbody>
+    <tr><td>Intel UHD (gen-12lp)</td><td class="num">36.4 ms</td></tr>
+    <tr><td>RTX 3050 (ampere)</td><td class="num">33.7 ms</td></tr>
+  </tbody>
+</table>
+
+<p>Identical script, identical method. An 8% gain from a discrete GPU is not credible, so the benchmark was wrong, not the hardware.</p>
+
+<h3>Result 2: the copy was the cost, not the maths</h3>
+
+<p>Splitting the round trip from the compute, on the RTX 3050:</p>
+
+<table>
+  <thead>
+    <tr><th>Matrix</th><th class="num">Full round trip</th><th class="num">Result kept on GPU</th><th class="num">Bytes moved per call</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1024×1024</td><td class="num">26.6 ms — 81 GFLOP/s</td><td class="num win">9.28 ms — 231 GFLOP/s</td><td class="num">12 MB</td></tr>
+    <tr><td>2048×2048</td><td class="num">68.8 ms — 250 GFLOP/s</td><td class="num win">38.2 ms — 450 GFLOP/s</td><td class="num">48 MB</td></tr>
+  </tbody>
+</table>
+
+<p>Adding <code>{ output: "gpu" }</code> made the same work 2.9x faster at 1024 and 1.8x faster at 2048. The arithmetic did not change. The only difference is that the answer stopped being copied back into JavaScript.</p>
+
+<p>That also explains why the discrete card looked flat. A discrete GPU sits behind the PCIe bus, so every input crosses it on the way in and every read-back crosses it on the way out. Integrated graphics share memory with the CPU and pay far less for the same copy. The RTX 3050 wins the arithmetic and hands part of the win back on transport.</p>
+
+<div class="card">
+  <span class="label">The rule this produces</span>
+  <p><strong>Chain kernels with <code>{ output: "gpu" }</code> and read back exactly once, at the end.</strong> A pipeline that returns to JavaScript between every step spends most of its time copying. This is true on this laptop, and more true on any discrete card.</p>
+  <p>It re-ranks the project ideas above. The wave grid works well because it computes a million pixels from small inputs. Embedding similarity works well because the vectors upload once and stay. Any design that pushes a large array in and pulls a large array out every frame will disappoint you.</p>
+</div>
+
+<h3>Result 3: one ceiling stays in place</h3>
+
+<p>Both adapters report <code>shader-f16</code> and <code>subgroups</code>. Neither reports <code>subgroup-matrix</code> — Chrome 152 does not expose it here. So MatMul's <code>matmul-subgroup-matrix-ext.wgsl.jinja</code> variant is never selected on this machine, the tiled variants run instead, and the tensor cores stay idle. The 450 GFLOP/s figure sits well below this card's float32 peak, and that is the reason.</p>
+
+<p>The 4 GB of video memory is not a limit at this scale. It only constrains whole models, which this library does not run.</p>
+
+<h3>How to read these numbers</h3>
+
+<p>They are wall-clock times, not the GPU-only timings used in the blog's M4 table, so the two are not comparable. Even the "kept on GPU" column still re-uploads both inputs on every iteration, so the true compute time is lower than shown. The first timed call after a cold start took 201 ms against a 33.7 ms median — warm up before measuring anything. And this is one laptop, which is precisely the argument for running Fleet on it.</p>
+
+<h2 id="method">11. How these tests were run</h2>
+
+<p>Section 10 is only worth anything if you can repeat it. The harness is one self-contained file, <code>bench.html</code>, sitting next to this report. It needs no npm, no bundler, and no dependencies beyond a browser.</p>
+
+<h3>Running it</h3>
+
+<div class="card">
+  <span class="label">Reproduce in three commands</span>
+  <ol>
+    <li><code>cd webgpu-projects</code></li>
+    <li><code>python -m http.server 8793</code></li>
+    <li>Open <code>http://localhost:8793/bench.html</code> and wait about 20 seconds.</li>
+  </ol>
+  <p>Results render on the page and are also left in <code>window.__result</code>, so you can read them from the DevTools console or from an automation tool. Stop the server with <strong>Ctrl + C</strong>.</p>
+</div>
+
+<p>A local server is required. Opening the file directly with <code>file://</code> fails, because the CDN module import is blocked from that origin. <code>localhost</code> counts as a secure context, so WebGPU works there without a certificate.</p>
+
+<h3>What the harness measures, and why it is built that way</h3>
+
+<p><strong>Step 0 — environment.</strong> It records the adapter's <code>vendor</code> and <code>architecture</code>, and then checks three features by name: <code>shader-f16</code>, <code>subgroups</code>, and <code>subgroup-matrix</code>. The last one is the interesting one, because its absence is what keeps the fastest MatMul variant from ever being selected.</p>
+
+<p><strong>Step 1 — load.</strong> It tries jsDelivr first and falls back to esm.sh, recording which one worked. Any import failure is kept in the output rather than thrown away, because a page's Content-Security-Policy is the usual cause and the message says so.</p>
+
+<p><strong>Step 2 — correctness before speed.</strong> It runs <code>ai.onnx.Relu</code> on <code>[-1, 0, 2, -3]</code> and compares the result against <code>[0, 0, 2, 0]</code>, reporting a <code>pass</code> boolean. A fast wrong answer is not a result. This check runs first so a broken load cannot masquerade as a slow one.</p>
+
+<p><strong>Step 3 — speed, measured twice.</strong> For each size, <code>ai.onnx.MatMul</code> is timed two ways. The first is the ordinary call: upload both inputs, compute, copy the answer back into JavaScript. The second passes <code>{ output: "gpu" }</code> so the answer stays on the device. The difference between the two columns is the entire argument of section 10.</p>
+
+<p>Three details in that step matter. Three warm-up calls are discarded before timing, because the first call after a cold start ran about six times the median. Fifteen timed runs are sorted and the median taken, not the mean, so one scheduling hiccup cannot move the number. And the GPU-resident variant has no per-call read-back to synchronise against, so it times the whole batch of fifteen and then issues one ordinary reading call to force the queue to drain, before dividing. Timing GPU work without a synchronisation point measures how fast you can submit, not how fast the work finishes — that is the easiest way to produce a fake result here.</p>
+
+<p>The held buffers are released with <code>destroy()</code>. With <code>{ output: "gpu" }</code> you own them; fifteen undestroyed 4 MB buffers per size would leak.</p>
+
+<p><strong>Step 4 — the plain-JavaScript reference.</strong> A 128×128 tile is timed with three nested loops, then cubed up to 1024. It is labelled an estimate inside the output itself, because the small tile fits in cache and real JavaScript at full size would be worse. It is there for scale, not for a ratio you should quote.</p>
+
+<h3>What was measured outside the harness</h3>
+
+<p>Two things in section 10 did not come from <code>bench.html</code>. The GPU inventory and driver versions came from <code>Get-CimInstance Win32_VideoController</code> in PowerShell. The finding that Chrome ignores <code>powerPreference</code> came from calling <code>requestAdapter</code> three times in one page — with <code>high-performance</code>, with <code>low-power</code>, and with no preference — and observing that all three returned the same Intel adapter.</p>
+
+<h3>Reproducibility, honestly stated</h3>
+
+<p>The suite was run twice on the RTX 3050, in separate browser sessions. Both runs agree on the conclusion and differ on the digits:</p>
+
+<table>
+  <thead><tr><th>Measurement</th><th class="num">First run</th><th class="num">Second run</th></tr></thead>
+  <tbody>
+    <tr><td>1024 round trip</td><td class="num">26.6 ms</td><td class="num">25.8 ms</td></tr>
+    <tr><td>1024 result on GPU</td><td class="num">9.28 ms</td><td class="num">9.63 ms</td></tr>
+    <tr><td>2048 round trip</td><td class="num">68.8 ms</td><td class="num">75.8 ms</td></tr>
+    <tr><td>2048 result on GPU</td><td class="num">38.2 ms</td><td class="num">36.4 ms</td></tr>
+  </tbody>
+</table>
+
+<p>That is roughly 10% of run-to-run variation on a laptop with thermal limits and other software running. The 2.1x to 2.9x advantage of keeping results on the GPU is far larger than that spread, so it is a real effect. A 10% difference between two other numbers on this page would not be.</p>
+
+<p>Section 10's two-adapter comparison (36.4 ms against 33.7 ms) is a single run of each. Given the variance above, treat that 8% gap as "no measurable difference" rather than as a small win for the discrete card — which is exactly why the second, split measurement was needed.</p>
+
+<h3>Changing it</h3>
+
+<p>To test other kernels, change the repository ID in <code>getKernel</code> and the input names to match that kernel's card — the bind keys are listed in its Inputs table. To test other sizes, edit the <code>[1024, 2048]</code> array. To tighten the numbers, raise <code>RUNS</code> from 15. To measure a different GPU, change the Windows graphics preference using the click path in section 10 and restart Chrome; the harness reports which adapter it actually got, so a mislabelled result is not possible.</p>
+
+<h2 id="limits">12. Limits and gaps you should know before you start</h2>
+
+<ul>
+  <li><strong>It is an early preview.</strong> The npm README says so directly: the API may still change, and kernel coverage is growing. The published version is <code>0.0.1-preview.1</code>, installed with the <code>@preview</code> tag. Do not build something load-bearing on it without pinning a <code>revision</code>.</li>
+  <li><strong>WebGPU is not everywhere.</strong> Availability depends on browser, operating system, GPU and driver. Detect it with <code>"gpu" in navigator</code> and have a fallback path.</li>
+  <li><strong>Some fast paths need optional device features.</strong> The MatMul card names <code>subgroup-matrix</code>, <code>shader-f16</code> and <code>subgroups</code>. If your device lacks them, you get a correct answer from a slower variant, not an error — but you also do not get the headline numbers.</li>
+  <li><strong>Coverage inside a kernel is not total.</strong> MatMul implements all legal rank-1 to rank-4 combinations, but rank-5 only when both inputs are rank 5; mixed-rank cases involving a rank-5 operand are not yet implemented, and neither are higher ranks or the remaining ONNX types. Read the kernel card, not just the operator name.</li>
+  <li><strong>No model runner yet</strong>, as covered above.</li>
+  <li><strong>The benchmark is one machine.</strong> Treat 2.57x as evidence that the approach works, not as a number you can quote for your own hardware until you have run Fleet on it.</li>
+</ul>
+
+<h2 id="sources">13. Sources</h2>
+
+<ul>
+  <li><a href="https://huggingface.co/blog/webgpu-kernels">Introducing @huggingface/kernels: 200+ WebGPU Kernels for Local AI</a> — the announcement post, by Nico Martin and Xenova. Also mirrored at <a href="https://github.com/huggingface/blog/blob/main/webgpu-kernels.md">github.com/huggingface/blog</a>.</li>
+  <li><a href="https://www.npmjs.com/package/@huggingface/kernels">@huggingface/kernels on npm</a> — the README, which is where the <code>output: "gpu"</code>, <code>revision</code>, <code>trustRemoteCode</code> and data-type details come from.</li>
+  <li><a href="https://huggingface.co/webgpu-kernels">huggingface.co/webgpu-kernels</a> — the 207 kernel repositories. Kernel list, file trees, manifests and shader templates in this report were fetched from the Hub's <code>/api/kernels</code> endpoint and the <code>v1</code> branches.</li>
+  <li><a href="https://webgpu-kernels-fleet.hf.space/">Fleet</a> — the in-browser benchmark.</li>
+  <li><a href="https://huggingface.co/docs/kernels/index">huggingface.co/docs/kernels</a> — the Kernel Hub docs. Note that these document the <em>Python</em> <code>kernels</code> package and <code>kernel-builder</code>, for loading compiled kernels into PyTorch. Same idea, different runtime; it is not the JavaScript library.</li>
+  <li><a href="https://www.youtube.com/watch?v=y9xup6XEP2o">Launch video</a> — source of the wave demo, the attention demo, and the frame-rate comparison.</li>
+</ul>
+
+<footer>
+  Compiled 4 September 2026 from the sources listed above. Numbers, version strings and file paths are quoted as published; kernel count and domain split (175 <code>ai.onnx</code> + 32 <code>com.microsoft</code> = 207) were counted directly from the Hugging Face Hub API on the date of writing. Section 10 is measured, not quoted: HP Victus 15-fa0xxx, Chrome 152, on 4 September 2026. Section 11 documents the harness, which ships alongside this report as <code>bench.html</code>.
+</footer>
+
+</div>
+</body>
+</html>

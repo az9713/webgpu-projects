@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Poison the training set with a click</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;cursor:crosshair}
+  button{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:220px;font-size:.9rem}
+  .stat b{color:#2dd4bf;font-weight:600;font-size:1.1rem}
+  .stat div{margin-bottom:6px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Poison the training set with a click</h1>
+<p>A logistic-regression classifier trains continuously on two clusters. Click anywhere to add a point with the <em>wrong</em> label for that side. One bad point tilts the boundary. Ten drag it and wash out the confidence: the shading fades as the weights shrink. Click deep inside the other cluster for the strongest pull. The lesson is physical: data quality beats model choice.</p>
+<div class="row" style="margin-bottom:10px"><button id="reset">Reset the data</button><button id="pause">Pause training</button></div>
+<div id="st">loading the library&hellip;</div>
+<div class="row">
+  <canvas id="c" width="560" height="560"></canvas>
+  <div class="stat">
+    <div>poisoned points <b id="np">0</b></div>
+    <div>accuracy on the clean points <b id="acc">–</b></div>
+    <div>mean |p &minus; y| <b id="loss">–</b></div>
+    <div>training steps <b id="steps">0</b></div>
+    <div style="color:#94a3b8;margin-top:10px">orange: label 0 &nbsp; blue: label 1<br>a ring marks a poisoned point<br>shading: the model's probability of label 1</div>
+  </div>
+</div>
+<p style="margin-top:14px">Each step is eight kernel calls, all on the card: <code>MatMul</code> for the logits, <code>Sigmoid</code>, <code>Sub</code> for p &minus; y, <code>MatMul</code> with the transposed inputs for the gradient, <code>Mul</code> by the learning rate, <code>Sub</code> to update the weights, then <code>Abs</code> and <code>ReduceMean</code> to report the error. The weights stay resident between steps. Logistic regression is fragile by design here: every point pulls on one straight line, so a mislabelled point far from the boundary pulls hardest.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [matmul, sigmoid, sub, mul, rmean, abs] = await Promise.all(["MatMul", "Sigmoid", "Sub", "Mul", "ReduceMean", "Abs"].map(op));
+  say("training");
+  const $ = (id) => document.getElementById(id), c = $("c"), g = c.getContext("2d"), S = c.width, G = 70;
+  const LR = 1.0, STEPS_PER_FRAME = 4;
+  let pts = [], w = null, steps = 0, paused = false, X, Xt, Y, dirty = true, busy = false;
+
+  async function reset() {
+    while (busy) await new Promise((r) => setTimeout(r, 5));   // let the step in flight finish before w goes
+    pts = []; const gauss = () => Math.sqrt(-2 * Math.log(Math.random() + 1e-12)) * Math.cos(6.283 * Math.random());
+    for (let i = 0; i < 80; i++) { pts.push({ x: -0.4 + 0.22 * gauss(), y: -0.3 + 0.22 * gauss(), l: 0 }); pts.push({ x: 0.4 + 0.22 * gauss(), y: 0.3 + 0.22 * gauss(), l: 1 }); }
+    w?.destroy?.(); w = { data: new Float32Array([0, 0, 0]), shape: [3, 1] }; steps = 0; dirty = true;
+  }
+  function rebuild() {     // X [n,3] with a bias column, its transpose, and the labels
+    const n = pts.length, x = new Float32Array(n * 3), xt = new Float32Array(3 * n), y = new Float32Array(n);
+    pts.forEach((p, i) => { x[i * 3] = p.x; x[i * 3 + 1] = p.y; x[i * 3 + 2] = 1; xt[i] = p.x; xt[n + i] = p.y; xt[2 * n + i] = 1; y[i] = p.l; });
+    X = { data: x, shape: [n, 3] }; Xt = { data: xt, shape: [3, n] }; Y = { data: y, shape: [n, 1] }; dirty = false;
+  }
+  // the grid where the probability field is evaluated, uploaded once
+  const grid = new Float32Array(G * G * 3);
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const p = (j * G + i) * 3; grid[p] = (i + 0.5) / G * 2 - 1; grid[p + 1] = 1 - (j + 0.5) / G * 2; grid[p + 2] = 1; }
+  const Gt = { data: grid, shape: [G * G, 3] };
+
+  async function step() {
+    const n = pts.length;
+    const z = await matmul({ a: X, b: w }, { output: "gpu" });
+    const p = await sigmoid({ x: z.y }, { output: "gpu" });
+    const e = await sub({ a: p.y, b: Y }, { output: "gpu" });
+    const gr = await matmul({ a: Xt, b: e.c }, { output: "gpu" });
+    const sg = await mul({ a: gr.y, b: { data: new Float32Array([LR / n]), shape: [1] } }, { output: "gpu" });
+    const nw = await sub({ a: w, b: sg.c }, { output: "gpu" });
+    const ae = await abs({ x: e.c }, { output: "gpu" });
+    const m = await rmean({ x: ae.y }, { attrs: { axes: [0], keepdims: 0 }, outputs: { y: { shape: [1], dtype: "float32" } } });
+    [z.y, p.y, e.c, gr.y, sg.c, ae.y].forEach((t) => t.destroy()); w.destroy?.();
+    w = nw.c; steps++;
+    return m.y.data[0];
+  }
+  async function frame() {
+    if (dirty) rebuild();
+    let loss = null;
+    busy = true;
+    if (!paused) for (let i = 0; i < STEPS_PER_FRAME; i++) loss = await step();
+    busy = false;
+    // read the weights (12 bytes) and the probability field for drawing
+    const wc = (await mul({ a: w, b: { data: new Float32Array([1]), shape: [1] } })).c.data;
+    const pf = (await sigmoid({ x: (await matmul({ a: Gt, b: w })).y })).y.data;
+    draw(wc, pf, loss);
+    setTimeout(() => frame().catch(fail), 0);   // a timer, not requestAnimationFrame: keeps training in a hidden tab
+  }
+  function draw(wc, pf, loss) {
+    const px = (x) => (x + 1) / 2 * S, py = (y) => (1 - y) / 2 * S;
+    const img = g.createImageData(G, G), d = img.data;
+    for (let i = 0; i < G * G; i++) { const t = pf[i]; d[i * 4] = 251 * (1 - t) + 96 * t; d[i * 4 + 1] = 146 * (1 - t) + 165 * t; d[i * 4 + 2] = 60 * (1 - t) + 250 * t; d[i * 4 + 3] = 70; }
+    g.fillStyle = "#0b1220"; g.fillRect(0, 0, S, S);
+    const tmp = document.createElement("canvas"); tmp.width = tmp.height = G; tmp.getContext("2d").putImageData(img, 0, 0);
+    g.imageSmoothingEnabled = true; g.drawImage(tmp, 0, 0, S, S);
+    // the boundary w0 x + w1 y + w2 = 0
+    if (Math.abs(wc[1]) > 1e-6 || Math.abs(wc[0]) > 1e-6) {
+      g.strokeStyle = "#e2e8f0"; g.lineWidth = 2; g.beginPath();
+      if (Math.abs(wc[1]) > Math.abs(wc[0])) { g.moveTo(px(-1), py(-(wc[0] * -1 + wc[2]) / wc[1])); g.lineTo(px(1), py(-(wc[0] * 1 + wc[2]) / wc[1])); }
+      else { g.moveTo(px(-(wc[1] * -1 + wc[2]) / wc[0]), py(-1)); g.lineTo(px(-(wc[1] * 1 + wc[2]) / wc[0]), py(1)); }
+      g.stroke();
+    }
+    let correct = 0, clean = 0;
+    for (const p of pts) {
+      const pred = wc[0] * p.x + wc[1] * p.y + wc[2] > 0 ? 1 : 0;
+      if (!p.poison) { clean++; if (pred === p.l) correct++; }
+      g.fillStyle = p.l ? "#60a5fa" : "#fb923c"; g.beginPath(); g.arc(px(p.x), py(p.y), 4, 0, 7); g.fill();
+      if (p.poison) { g.strokeStyle = "#f87171"; g.lineWidth = 2; g.beginPath(); g.arc(px(p.x), py(p.y), 8, 0, 7); g.stroke(); }
+    }
+    $("np").textContent = pts.filter((p) => p.poison).length; $("acc").textContent = (correct / clean * 100).toFixed(1) + "%";
+    if (loss !== null) $("loss").textContent = loss.toFixed(4); $("steps").textContent = steps;
+    window.__result = { steps, poisoned: pts.filter((p) => p.poison).length, accuracy: correct / clean, w: Array.from(wc), loss };
+  }
+  c.onclick = (ev) => {
+    const r = c.getBoundingClientRect(), x = (ev.clientX - r.left) / r.width * 2 - 1, y = 1 - (ev.clientY - r.top) / r.height * 2;
+    const trueLabel = x + y > 0 ? 1 : 0;                   // the generating rule: the two clusters sit either side of x + y = 0
+    pts.push({ x, y, l: 1 - trueLabel, poison: true }); dirty = true;
+  };
+  $("reset").onclick = () => reset().catch(fail);
+  $("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "Resume training" : "Pause training"; };
+  await reset(); say("training, click the canvas to poison"); frame().catch(fail);
+} catch (e) { fail(e); }
+</script>
+</html>

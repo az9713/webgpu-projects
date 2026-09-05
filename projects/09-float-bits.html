@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Take a floating point number apart</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  input,button{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  input[type=range]{width:320px;padding:0;vertical-align:middle}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;margin:10px 0}
+  .lab{color:#94a3b8;font-size:.85rem}
+  .val{color:#e2e8f0;font:600 1rem ui-monospace,Consolas,monospace}
+  .bits{display:flex;gap:2px;margin:6px 0 4px}
+  .bits span{width:22px;height:26px;line-height:26px;text-align:center;border-radius:3px;font:13px ui-monospace,Consolas,monospace;color:#0f172a}
+  .s{background:#fb923c}.e{background:#2dd4bf}.f{background:#94a3b8}
+  .bits .gap{width:6px;background:none}
+  .dec{font:13px ui-monospace,Consolas,monospace;color:#cbd5e1}
+  .flag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.78rem;margin-left:8px;background:#334155;color:#94a3b8}
+  .on{background:#7f1d1d;color:#fecaca}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Take a floating point number apart</h1>
+<p>Every 32-bit float is <span style="color:#fb923c">one sign bit</span>, <span style="color:#2dd4bf">eight exponent bits</span> and <span style="color:#94a3b8">twenty-three fraction bits</span>. The GPU splits them with a <code>BitCast</code> to an unsigned integer, then shifts and masks. Type a number, then drag the slider and watch the exponent field fill up until <code>exp(x)</code> overflows to infinity.</p>
+<div class="row">
+  <label>number <input id="num" value="3.14159" size="14"></label>
+  <label>x for exp(x) <input id="sl" type="range" min="80" max="92" step="0.05" value="85"> <span id="slv" class="val">85</span></label>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div id="rows"></div>
+<p style="margin-top:14px">The decoded line is <code>(&minus;1)<sup>sign</sup> &times; 2<sup>exponent &minus; 127</sup> &times; (1 + fraction / 2<sup>23</sup>)</code>. An exponent field of 255 means infinity when the fraction is zero and NaN otherwise. An exponent field of 0 is a subnormal: no hidden 1, and 2<sup>&minus;126</sup> instead. Many GPUs flush subnormals to zero, and the last row shows what this one does. <code>IsInf</code> and <code>IsNaN</code> are separate kernels, so their answers are the GPU's, not JavaScript's. Kernels: <code>Exp Sub Div Concat BitCast BitShift BitwiseAnd IsNaN IsInf</code>.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [exp, sub, div, concat, bitcast, shift, band, isnan, isinf] = await Promise.all(
+    ["Exp", "Sub", "Div", "Concat", "BitCast", "BitShift", "BitwiseAnd", "IsNaN", "IsInf"].map(op));
+  say("ready");
+  const f32 = (a) => ({ data: new Float32Array(a), shape: [a.length] });
+  const u32 = (a) => ({ data: new Uint32Array(a), shape: [a.length] });
+  const LABELS = ["the number you typed", "exp(x) from the slider", "&infin; &minus; &infin;", "0 / 0", "1 / 0", "10<sup>&minus;38</sup> / 10<sup>10</sup>, which a CPU keeps as a subnormal"];
+
+  async function compute() {
+    const typed = Number(document.getElementById("num").value.trim());
+    const x = +document.getElementById("sl").value; document.getElementById("slv").textContent = x;
+    // build the six values on the GPU: the typed one passes straight through
+    const e = await exp({ x: f32([x]) }, { output: "gpu" });
+    const d = await sub({ a: f32([Infinity]), b: f32([Infinity]) }, { output: "gpu" });
+    const q = await div({ a: f32([0, 1, 1e-38]), b: f32([0, 0, 1e10]) }, { output: "gpu" });
+    const v = await concat({ a: f32([typed]), b: e.y, d: d.c, e: q.c }, { attrs: { axis: 0 } });
+    [e.y, d.c, q.c].forEach((t) => t.destroy());
+    const n = 6, V = { data: v.c.data, shape: [n] };
+    const u = await bitcast({ input: V }, { attrs: { to: 12 } });                            // 12 = UINT32
+    const U = { data: u.output.data, shape: [n] };
+    const sign = await shift({ x: U, y: u32([31]) }, { attrs: { direction: "RIGHT" } });
+    const sh23 = await shift({ x: U, y: u32([23]) }, { attrs: { direction: "RIGHT" } });
+    const expo = await band({ a: { data: sh23.z.data, shape: [n] }, b: u32([255]) });
+    const frac = await band({ a: U, b: u32([0x7fffff]) });
+    const nan = await isnan({ x: V });
+    const inf = await isinf({ x: V });
+    const words = u.output.data;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const s = sign.z.data[i], ex = expo.c.data[i], fr = frac.c.data[i];
+      const word = words[i];
+      const b = word.toString(2).padStart(32, "0");
+      const dec = ex === 255 ? (fr ? "NaN" : (s ? "-" : "+") + "Infinity")
+                : ex === 0 ? `(-1)^${s} × 2^-126 × (0 + ${fr}/2^23) = ${((s ? -1 : 1) * 2 ** -126 * (fr / 2 ** 23)).toExponential(4)}`
+                : `(-1)^${s} × 2^(${ex}-127) × (1 + ${fr}/2^23) = ${(s ? -1 : 1) * 2 ** (ex - 127) * (1 + fr / 2 ** 23)}`;
+      const label = LABELS[i] + (i === 5 && ex === 0 && fr === 0 ? " &mdash; this GPU flushed it to zero" : i === 5 && ex === 0 ? " &mdash; this GPU kept the subnormal" : "");
+      out.push({ label, value: v.c.data[i], s, ex, fr, bits: b, dec, nan: nan.y.data[i], inf: inf.y.data[i] });
+    }
+    window.__result = out;
+    document.getElementById("rows").innerHTML = out.map((r) => `<div class="card">
+      <span class="lab">${r.label}</span> &nbsp; <span class="val">${String(r.value)}</span>
+      <span class="flag ${r.inf ? "on" : ""}">IsInf ${r.inf}</span><span class="flag ${r.nan ? "on" : ""}">IsNaN ${r.nan}</span>
+      <div class="bits"><span class="s">${r.bits[0]}</span><span class="gap"></span>${[...r.bits.slice(1, 9)].map((c) => `<span class="e">${c}</span>`).join("")}<span class="gap"></span>${[...r.bits.slice(9)].map((c) => `<span class="f">${c}</span>`).join("")}</div>
+      <div class="dec">sign ${r.s} &nbsp; exponent ${r.ex} &nbsp; fraction ${r.fr} &nbsp;&rarr;&nbsp; ${r.dec}</div></div>`).join("");
+    say(`x = ${x}: exp(x) has exponent field ${out[1].ex}${out[1].ex === 255 ? " — overflowed" : ""}`);
+  }
+  let busy = false, again = false;
+  const go = () => { if (busy) { again = true; return; } busy = true; compute().catch(fail).finally(() => { busy = false; if (again) { again = false; go(); } }); };
+  document.getElementById("num").oninput = go; document.getElementById("sl").oninput = go;
+  go();
+} catch (e) { fail(e); }
+</script>
+</html>

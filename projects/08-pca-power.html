@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Principal components without a decomposition kernel</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;background:#0b1220}
+  button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  input[type=range]{width:200px;padding:0;vertical-align:middle}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:260px;font-size:.9rem;align-self:flex-start}
+  .stat b{color:#2dd4bf;font-weight:600;font-size:1.05rem}
+  .stat div{margin-bottom:6px}
+  #drop{border:2px dashed #334155;border-radius:8px;padding:10px 14px;color:#94a3b8;font-size:.85rem}
+  #drop.over{border-color:#2dd4bf}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Principal components without a decomposition kernel</h1>
+<p>There is no SVD and no eigen-solver among the 207 kernels, so the standard route is closed. Power iteration works anyway: multiply a vector by the covariance again and again and normalise, and it turns toward the leading direction. Deflate that direction away and repeat for the second. The counter shows how many multiplications it took, so slow convergence is visible rather than mysterious.</p>
+<div class="row" style="margin-bottom:10px">
+  <label>gap between the top two eigenvalues, &lambda;<sub>1</sub>/&lambda;<sub>2</sub> = <b id="gapv">2.0</b> <input id="gap" type="range" min="1.02" max="4" step="0.02" value="2"></label>
+  <button id="run">Run again</button>
+  <div id="drop">or drop a CSV here: numeric columns are the features, one text column is the colour</div>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row" style="align-items:flex-start">
+  <canvas id="c" width="560" height="460"></canvas>
+  <div class="stat" id="stats"></div>
+</div>
+<p style="margin-top:14px">Pipeline: <code>ReduceMean</code> and <code>Sub</code> centre the data; <code>Gemm</code> with <code>transA</code> builds the covariance X<sup>T</sup>X / n; each iteration is one <code>MatMul</code> and one <code>LpNormalization</code>; the deflation is <code>Gemm</code> for the outer product and <code>Sub</code>. The scores that are plotted are one last <code>MatMul</code>. Convergence stops when the vector moves by less than 10<sup>&minus;6</sup> between iterations. The rate is set by the ratio of the two largest eigenvalues: close eigenvalues converge slowly, and the slider lets you make them close.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [matmul, gemm, sub, rmean, lpnorm] = await Promise.all(["MatMul", "Gemm", "Sub", "ReduceMean", "LpNormalization"].map(op));
+  const $ = (id) => document.getElementById(id), c = $("c"), g = c.getContext("2d");
+  const gauss = () => Math.sqrt(-2 * Math.log(Math.random() + 1e-12)) * Math.cos(6.283 * Math.random());
+  let data = null;   // { X: Float32Array, n, d, labels: [] }
+
+  function synth(gap) {   // three clusters in six dimensions, with planted variance along two known directions
+    const n = 450, d = 6, X = new Float32Array(n * d), labels = [];
+    const u = [1, 1, 0, 0, 0, 0].map((v) => v / Math.SQRT2), v = [0, 0, 1, 1, 0, 0].map((x) => x / Math.SQRT2);
+    const s1 = 3, s2 = 3 / Math.sqrt(gap);      // standard deviations along u and v; their variances have ratio "gap"
+    for (let i = 0; i < n; i++) {
+      const k = i % 3, a = s1 * gauss() + (k - 1) * 0.6, b = s2 * gauss() + (k === 1 ? 0.8 : -0.4);
+      for (let j = 0; j < d; j++) X[i * d + j] = a * u[j] + b * v[j] + 0.5 * gauss();
+      labels.push(k);
+    }
+    return { X, n, d, labels, name: `synthetic, ${n} rows, ${d} columns` };
+  }
+
+  async function run() {
+    const { X, n, d, labels, name } = data;
+    const t0 = performance.now();
+    const Xt = { data: X, shape: [n, d] };
+    const mean = await rmean({ x: Xt }, { attrs: { axes: [0], keepdims: 1 }, outputs: { y: { shape: [1, d], dtype: "float32" } }, output: "gpu" });
+    const Xc = await sub({ a: Xt, b: mean.y }, { output: "gpu" });
+    const C = await gemm({ a: Xc.c, b: Xc.c }, { attrs: { transA: 1, alpha: 1 / n }, output: "gpu" });      // covariance, d×d
+    let Cn = C.y;   // the matrix being iterated: C, then C deflated
+    const comps = [], iters = [], lambdas = [], residuals = [];
+    for (let k = 0; k < 2; k++) {
+      let v = { data: Float32Array.from({ length: d }, (_, j) => 1 / Math.sqrt(d) + 0.01 * j), shape: [1, d] }, prev = Array.from(v.data), it = 0;
+      for (; it < 5000; it++) {
+        const w = await matmul({ a: v, b: Cn }, { output: "gpu" });                   // v ← v C, one row vector
+        const nv = await lpnorm({ input: w.c ?? w.y }, { attrs: { axis: -1, p: 2 } });
+        (w.c ?? w.y).destroy();
+        const cur = Array.from(nv.output.data);
+        let diff = 0; for (let j = 0; j < d; j++) diff = Math.max(diff, Math.abs(cur[j] - prev[j]));
+        v = { data: nv.output.data, shape: [1, d] }; prev = cur;
+        if (it > 0 && diff < 1e-6) break;
+      }
+      // lambda = v C vᵀ, and the residual |C v − lambda v| as an honest convergence check
+      const cv = (await matmul({ a: v, b: Cn })).y.data;
+      let lam = 0; for (let j = 0; j < d; j++) lam += cv[j] * v.data[j];
+      let res = 0; for (let j = 0; j < d; j++) res += (cv[j] - lam * v.data[j]) ** 2;
+      comps.push(Array.from(v.data)); iters.push(it + 1); lambdas.push(lam); residuals.push(Math.sqrt(res));
+      // deflate: C ← C − lambda v vᵀ
+      const outer = await gemm({ a: v, b: v }, { attrs: { transA: 1, alpha: lam }, output: "gpu" });
+      const next = await sub({ a: Cn, b: outer.y }, { output: "gpu" });
+      outer.y.destroy(); if (Cn !== C.y) Cn.destroy(); Cn = next.c;
+    }
+    const V = { data: Float32Array.from([...comps[0], ...comps[1]]), shape: [2, d] };
+    const Vt = new Float32Array(d * 2); for (let j = 0; j < d; j++) { Vt[j * 2] = comps[0][j]; Vt[j * 2 + 1] = comps[1][j]; }
+    const scores = (await matmul({ a: Xc.c, b: { data: Vt, shape: [d, 2] } })).y.data;
+    let total = 0; { const cc = (await sub({ a: C.y, b: { data: new Float32Array([0]), shape: [1] } })).c.data; for (let j = 0; j < d; j++) total += cc[j * d + j]; }
+    [mean.y, Xc.c, C.y, Cn].forEach((t) => t.destroy());
+    const ms = performance.now() - t0;
+    draw(scores, labels, n);
+    $("stats").innerHTML = `<div>${name}</div>
+      <div>iterations for component 1 <b>${iters[0]}</b></div><div>iterations for component 2 <b>${iters[1]}</b></div>
+      <div>&lambda;<sub>1</sub> <b>${lambdas[0].toFixed(3)}</b> &nbsp; &lambda;<sub>2</sub> <b>${lambdas[1].toFixed(3)}</b> &nbsp; ratio <b>${(lambdas[0] / lambdas[1]).toFixed(2)}</b></div>
+      <div>explained variance <b>${((lambdas[0] + lambdas[1]) / total * 100).toFixed(1)}%</b> of ${total.toFixed(2)}</div>
+      <div>residual |Cv &minus; &lambda;v| <b>${residuals[0].toExponential(1)}</b>, <b>${residuals[1].toExponential(1)}</b></div>
+      <div>time <b>${ms.toFixed(0)} ms</b></div>
+      <div style="color:#94a3b8;margin-top:8px">v<sub>1</sub> = [${comps[0].map((x) => x.toFixed(2)).join(", ")}]<br>v<sub>2</sub> = [${comps[1].map((x) => x.toFixed(2)).join(", ")}]</div>`;
+    window.__result = { iters, lambdas, residuals, total, ms, comps };
+    say(`done: ${iters[0]} + ${iters[1]} iterations`);
+  }
+  function draw(s, labels, n) {
+    const W = c.width, H = c.height; g.fillStyle = "#0b1220"; g.fillRect(0, 0, W, H);
+    let m = 0; for (let i = 0; i < 2 * n; i++) m = Math.max(m, Math.abs(s[i])); m *= 1.1;
+    g.strokeStyle = "#334155"; g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+    const cols = ["#fb923c", "#60a5fa", "#2dd4bf", "#f472b6", "#a3e635", "#facc15", "#c084fc"];
+    const cats = [...new Set(labels)];
+    for (let i = 0; i < n; i++) { g.fillStyle = cols[cats.indexOf(labels[i]) % cols.length]; g.beginPath(); g.arc(W / 2 + s[i * 2] / m * W / 2, H / 2 - s[i * 2 + 1] / m * H / 2, 3.5, 0, 7); g.fill(); }
+    g.fillStyle = "#94a3b8"; g.font = "12px system-ui"; g.fillText("component 1 →", W - 110, H / 2 - 6); g.fillText("component 2 ↑", W / 2 + 6, 14);
+    cats.forEach((k, i) => { g.fillStyle = cols[i % cols.length]; g.fillText(String(k), 10, H - 10 - i * 16); });
+  }
+  function parseCsv(text) {
+    const rows = text.trim().split(/\r?\n/).map((l) => l.split(/[,;\t]/).map((x) => x.trim()));
+    const header = rows[0].some((x) => isNaN(parseFloat(x))) ? rows.shift() : rows[0].map((_, i) => "col" + i);
+    const numeric = header.map((_, j) => rows.every((r) => r[j] !== undefined && r[j] !== "" && !isNaN(parseFloat(r[j]))));
+    const labelCol = numeric.indexOf(false), fcols = header.map((_, j) => j).filter((j) => numeric[j]);
+    if (fcols.length < 2) throw new Error("need at least two numeric columns");
+    const n = rows.length, d = fcols.length, X = new Float32Array(n * d);
+    rows.forEach((r, i) => fcols.forEach((j, k) => { X[i * d + k] = parseFloat(r[j]); }));
+    return { X, n, d, labels: rows.map((r) => labelCol >= 0 ? r[labelCol] : 0), name: `${n} rows, ${d} numeric columns` };
+  }
+  const drop = $("drop");
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = async (e) => { e.preventDefault(); drop.classList.remove("over"); try { data = parseCsv(await e.dataTransfer.files[0].text()); await run(); } catch (err) { fail(err); } };
+  $("gap").oninput = () => { $("gapv").textContent = (+$("gap").value).toFixed(2); data = synth(+$("gap").value); run().catch(fail); };
+  $("run").onclick = () => { data = synth(+$("gap").value); run().catch(fail); };
+  data = synth(2); await run();
+} catch (e) { fail(e); }
+</script>
+</html>

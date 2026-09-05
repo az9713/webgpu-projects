@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>WebGPU kernel benchmark</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:32px}
+  h1{color:#fb923c;font-size:1.2rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 20px;font-size:.9rem}
+  pre{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px;
+      overflow-x:auto;color:#e2e8f0;font:13px/1.6 ui-monospace,Consolas,monospace}
+</style>
+
+<h1>WebGPU kernel benchmark</h1>
+<p>Serve this file over http://localhost (a CDN module import will not run from file://), then open it.
+   Results appear below and are also left in <code>window.__result</code>.</p>
+<pre id="out">running…</pre>
+
+<script type="module">
+const out = document.getElementById("out");
+const show = (o) => { window.__result = o; out.textContent = JSON.stringify(o, null, 1); };
+const result = {};
+
+try {
+  // --- 0. environment -------------------------------------------------------
+  if (!("gpu" in navigator)) throw new Error("WebGPU unavailable: no navigator.gpu");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  const info = adapter.info || {};
+  result.adapter = { vendor: info.vendor, architecture: info.architecture };
+  result.features = {
+    "shader-f16": adapter.features.has("shader-f16"),
+    "subgroups": adapter.features.has("subgroups"),
+    "subgroup-matrix": adapter.features.has("subgroup-matrix"),  // gates the fastest MatMul variant
+  };
+  result.userAgent = navigator.userAgent;
+  show(result);
+
+  // --- 1. load the library (no npm, no bundler) -----------------------------
+  let kernels, cdn;
+  for (const url of ["https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm",
+                     "https://esm.sh/@huggingface/kernels@preview"]) {
+    try { kernels = await import(url); cdn = url; break; }
+    catch (e) { result.importErrors = (result.importErrors || []).concat(url + " :: " + e.message); }
+  }
+  if (!kernels) throw new Error("no CDN import succeeded (a page CSP will block this)");
+  result.cdn = cdn;
+
+  // --- 2. correctness: does a kernel return the right answer? ---------------
+  const relu = await kernels.getKernel("webgpu-kernels/ai.onnx.Relu", { version: 1 });
+  const { y: r } = await relu({ x: { data: new Float32Array([-1, 0, 2, -3]), shape: [2, 2] } });
+  result.relu = { got: Array.from(r.data), expected: [0, 0, 2, 0], dtype: r.dtype };
+  result.relu.pass = result.relu.got.join() === result.relu.expected.join();
+  show(result);
+
+  // --- 3. speed: round trip vs keeping the result on the GPU ----------------
+  const matmul = await kernels.getKernel("webgpu-kernels/ai.onnx.MatMul", { version: 1 });
+  const WARMUP = 3, RUNS = 15;   // the first call after a cold start is ~6x the median
+  result.matmul = {};
+
+  for (const N of [1024, 2048]) {
+    const A = new Float32Array(N * N), B = new Float32Array(N * N);
+    for (let i = 0; i < N * N; i++) { A[i] = Math.random(); B[i] = Math.random(); }
+    const inputs = () => ({ a: { data: A, shape: [N, N] }, b: { data: B, shape: [N, N] } });
+    const flops = 2 * N ** 3;
+    const gflops = (ms) => +(flops / (ms / 1e3) / 1e9).toFixed(0);
+
+    // (a) full round trip: upload A and B, compute, copy the result back to JS
+    for (let i = 0; i < WARMUP; i++) await matmul(inputs());
+    const times = [];
+    for (let i = 0; i < RUNS; i++) {
+      const t0 = performance.now();
+      await matmul(inputs());
+      times.push(performance.now() - t0);
+    }
+    times.sort((x, z) => x - z);
+    const roundtrip = times[Math.floor(RUNS / 2)];
+
+    // (b) result stays on the GPU. No per-call read-back, so time the batch and
+    //     force the queue to drain with one ordinary (reading) call at the end.
+    for (let i = 0; i < WARMUP; i++) { const w = await matmul(inputs(), { output: "gpu" }); w.y.destroy?.(); }
+    const held = [];
+    const t1 = performance.now();
+    for (let i = 0; i < RUNS; i++) held.push((await matmul(inputs(), { output: "gpu" })).y);
+    await matmul(inputs());              // flush
+    const onGpu = (performance.now() - t1) / RUNS;
+    held.forEach((b) => b.destroy?.());  // you own GPU-resident outputs
+
+    result.matmul["N=" + N] = {
+      roundtrip_ms: +roundtrip.toFixed(2), roundtrip_gflops: gflops(roundtrip),
+      resultOnGpu_ms: +onGpu.toFixed(2),   resultOnGpu_gflops: gflops(onGpu),
+      speedup: +(roundtrip / onGpu).toFixed(2),
+      slowest_roundtrip_ms: +times[RUNS - 1].toFixed(2),
+      bytes_moved_MB: +((3 * N * N * 4) / 1048576).toFixed(1),
+    };
+    show(result);
+  }
+
+  // --- 4. plain-JS reference, for scale only --------------------------------
+  // A 128-wide tile timed and cubed up to 1024. The tile is cache-friendly and
+  // real JS at 1024 would be worse, so read this as an order of magnitude.
+  const N = 1024, M = 128;
+  const A = new Float32Array(N * N).fill(0.5), B = new Float32Array(N * N).fill(0.5);
+  const t2 = performance.now();
+  for (let i = 0; i < M; i++)
+    for (let j = 0; j < M; j++) { let s = 0; for (let k = 0; k < M; k++) s += A[i * N + k] * B[k * N + j]; }
+  const tile = performance.now() - t2;
+  result.plainJs = {
+    tile128_ms: +tile.toFixed(2),
+    extrapolated_1024_ms: +(tile * (N / M) ** 3).toFixed(0),
+    note: "estimate only — extrapolated from a cache-friendly 128x128 tile",
+  };
+  show(result);
+} catch (e) {
+  result.error = e.name + ": " + e.message;
+  show(result);
+}
+</script>
+</html>

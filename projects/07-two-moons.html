@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Two moons, one hidden layer, gradients by hand</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px}
+  button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:220px;font-size:.9rem}
+  .stat b{color:#2dd4bf;font-weight:600;font-size:1.1rem}
+  .stat div{margin-bottom:6px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Two moons, one hidden layer, gradients by hand</h1>
+<p>Two interleaved crescents that no straight line can separate. A network with one hidden layer trains in front of you, and the decision surface bends across the canvas until it wraps around both shapes. Every forward and backward step is a kernel call. Nothing is a framework.</p>
+<div class="row" style="margin-bottom:10px">
+  <label>hidden units <select id="hid"><option>4</option><option selected>16</option><option>64</option></select></label>
+  <label>learning rate <select id="lr"><option>0.1</option><option selected>0.5</option><option>2</option></select></label>
+  <button id="reset">Restart</button><button id="pause">Pause</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row">
+  <canvas id="c" width="600" height="450"></canvas>
+  <div class="stat">
+    <div>training steps <b id="steps">0</b></div>
+    <div>mean |p &minus; y| <b id="loss">–</b></div>
+    <div>accuracy <b id="acc">–</b></div>
+    <div>kernel calls per step <b id="calls">–</b></div>
+    <div style="color:#94a3b8;margin-top:10px">shading: the model's probability<br>white line: where it is 0.5</div>
+  </div>
+</div>
+<p style="margin-top:14px">Forward: <code>MatMul</code>, <code>Add</code>, <code>Relu</code>, <code>MatMul</code>, <code>Add</code>, <code>Sigmoid</code>. Backward: the gradient of sigmoid with the log loss is <code>Sub</code>, p &minus; y. The gradient through the rectifier is a comparison and a select, <code>Greater</code> then <code>Where</code>, which is two more calls than people expect. <code>Transpose</code> flips the activations for the weight gradients, <code>ReduceSum</code> collects the bias gradients, and <code>Mul</code> and <code>Sub</code> apply the update. Weights stay on the card between steps.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [matmul, add, relu, sigmoid, sub, mul, greater, where, transpose, rsum, rmean, abs] =
+    await Promise.all(["MatMul", "Add", "Relu", "Sigmoid", "Sub", "Mul", "Greater", "Where", "Transpose", "ReduceSum", "ReduceMean", "Abs"].map(op));
+  const $ = (id) => document.getElementById(id), c = $("c"), g = c.getContext("2d"), W = c.width, Hc = c.height, G = 96;
+  const X0 = -1.6, X1 = 2.6, Y0 = -1.1, Y1 = 1.6;      // the world window
+  const n = 200, gauss = () => Math.sqrt(-2 * Math.log(Math.random() + 1e-12)) * Math.cos(6.283 * Math.random());
+  let pts, X, Xt, Y, P = {}, steps = 0, paused = false, gen = 0, Hn, busy = false;
+  const f32 = (a, shape) => ({ data: Float32Array.from(a), shape });
+  const keep = async (t) => (await add({ a: t, b: f32([0], [1]) }, { output: "gpu" })).c;   // upload once, keep resident
+  const zero = f32([0], [1]);
+
+  async function reset() {
+    gen++; while (busy) await new Promise((r) => setTimeout(r, 5));   // let the step in flight finish before its buffers go
+    steps = 0; Hn = +$("hid").value;
+    pts = [];
+    for (let i = 0; i < n / 2; i++) { const t = Math.PI * i / (n / 2); pts.push({ x: Math.cos(t) + 0.1 * gauss(), y: Math.sin(t) + 0.1 * gauss(), l: 0 }); pts.push({ x: 1 - Math.cos(t) + 0.1 * gauss(), y: 0.5 - Math.sin(t) + 0.1 * gauss(), l: 1 }); }
+    for (const t of [X, Xt, Y]) t?.destroy?.();
+    X = await keep(f32(pts.flatMap((p) => [p.x, p.y]), [n, 2]));
+    Xt = await keep(f32([...pts.map((p) => p.x), ...pts.map((p) => p.y)], [2, n]));
+    Y = await keep(f32(pts.map((p) => p.l), [n, 1]));
+    for (const t of Object.values(P)) t.destroy?.();
+    P = { W1: await keep(f32(Array.from({ length: 2 * Hn }, () => gauss() * 1.0), [2, Hn])), b1: await keep(f32(Array.from({ length: Hn }, () => gauss() * 0.3), [1, Hn])),
+          W2: await keep(f32(Array.from({ length: Hn }, () => gauss() / Math.sqrt(Hn)), [Hn, 1])), b2: await keep(f32([0], [1, 1])) };
+    frame().catch(fail);   // reset owns the loop: the old loop sees the new gen and stops
+  }
+  const grid = new Float32Array(G * G * 2);
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { grid[(j * G + i) * 2] = X0 + (i + 0.5) / G * (X1 - X0); grid[(j * G + i) * 2 + 1] = Y1 - (j + 0.5) / G * (Y1 - Y0); }
+  let Gt = null;
+
+  async function forward(x, gpu) {   // returns z1b (pre-activation), h and p
+    const z1 = await matmul({ a: x, b: P.W1 }, { output: "gpu" });
+    const z1b = await add({ a: z1.y, b: P.b1 }, { output: "gpu" });
+    const h = await relu({ x: z1b.c }, { output: "gpu" });
+    const z2 = await matmul({ a: h.y, b: P.W2 }, { output: "gpu" });
+    const z2b = await add({ a: z2.y, b: P.b2 }, { output: "gpu" });
+    const p = await sigmoid({ x: z2b.c }, gpu ? { output: "gpu" } : {});
+    z1.y.destroy(); z2.y.destroy(); z2b.c.destroy();
+    return { z1b: z1b.c, h: h.y, p: p.y };
+  }
+  async function step(lr) {
+    const { z1b, h, p } = await forward(X, true);
+    const dz2 = await sub({ a: p, b: Y }, { output: "gpu" });                                   // dL/dz2 = p - y
+    const ht = await transpose({ x: h }, { outputs: { y: { shape: [Hn, n], dtype: "float32" } }, output: "gpu" });
+    const dW2 = await matmul({ a: ht.y, b: dz2.c }, { output: "gpu" });
+    const db2 = await rsum({ x: dz2.c }, { attrs: { axes: [0], keepdims: 1 }, outputs: { y: { shape: [1, 1], dtype: "float32" } }, output: "gpu" });
+    const w2t = await transpose({ x: P.W2 }, { outputs: { y: { shape: [1, Hn], dtype: "float32" } }, output: "gpu" });
+    const dh = await matmul({ a: dz2.c, b: w2t.y }, { output: "gpu" });
+    const mask = await greater({ a: z1b, b: zero }, { output: "gpu" });                          // the rectifier's gradient is a comparison...
+    const dz1 = await where({ condition: mask.c, x: dh.y, y: zero }, { output: "gpu" });          // ...and a select
+    const dW1 = await matmul({ a: Xt, b: dz1.output }, { output: "gpu" });
+    const db1 = await rsum({ x: dz1.output }, { attrs: { axes: [0], keepdims: 1 }, outputs: { y: { shape: [1, Hn], dtype: "float32" } }, output: "gpu" });
+    const ae = await abs({ x: dz2.c }, { output: "gpu" });
+    const m = await rmean({ x: ae.y }, { attrs: { axes: [0], keepdims: 0 }, outputs: { y: { shape: [1], dtype: "float32" } } });
+    const grads = { W1: dW1.y, b1: db1.y, W2: dW2.y, b2: db2.y };
+    for (const k of Object.keys(P)) {
+      const s = await mul({ a: grads[k], b: f32([lr / n], [1]) }, { output: "gpu" });
+      const nw = await sub({ a: P[k], b: s.c }, { output: "gpu" });
+      P[k].destroy(); s.c.destroy(); grads[k].destroy(); P[k] = nw.c;
+    }
+    [z1b, h, p, dz2.c, ht.y, w2t.y, dh.y, mask.c, dz1.output, ae.y].forEach((t) => t.destroy());
+    steps++; return m.y.data[0];
+  }
+  async function frame() {
+    const myGen = gen, lr = +$("lr").value;
+    let loss = null;
+    busy = true;
+    if (!paused) for (let i = 0; i < 3 && myGen === gen; i++) loss = await step(lr);
+    busy = false;
+    if (myGen !== gen) return;
+    if (!Gt) Gt = await keep(f32(grid, [G * G, 2]));
+    const fp = await forward(Gt, false); fp.z1b.destroy(); fp.h.destroy();
+    const pp = await forward(X, false); pp.z1b.destroy(); pp.h.destroy();
+    draw(fp.p.data, pp.p.data, loss);
+    setTimeout(() => frame().catch(fail), 0);
+  }
+  function draw(field, pp, loss) {
+    const px = (x) => (x - X0) / (X1 - X0) * W, py = (y) => (Y1 - y) / (Y1 - Y0) * Hc;
+    const img = g.createImageData(G, G), d = img.data;
+    for (let i = 0; i < G * G; i++) { const t = field[i]; d[i * 4] = 251 * (1 - t) + 96 * t; d[i * 4 + 1] = 146 * (1 - t) + 165 * t; d[i * 4 + 2] = 60 * (1 - t) + 250 * t; d[i * 4 + 3] = 90; }
+    const tmp = document.createElement("canvas"); tmp.width = tmp.height = G; tmp.getContext("2d").putImageData(img, 0, 0);
+    g.fillStyle = "#0b1220"; g.fillRect(0, 0, W, Hc); g.imageSmoothingEnabled = true; g.drawImage(tmp, 0, 0, W, Hc);
+    // the 0.5 contour: mark grid cells whose neighbours sit on the other side
+    g.fillStyle = "#e2e8f0";
+    for (let j = 0; j < G - 1; j++) for (let i = 0; i < G - 1; i++) { const a = field[j * G + i] > 0.5; if (a !== (field[j * G + i + 1] > 0.5) || a !== (field[(j + 1) * G + i] > 0.5)) g.fillRect(i / G * W, j / G * Hc, W / G + 1, Hc / G + 1); }
+    let correct = 0;
+    pts.forEach((p, i) => { if ((pp[i] > 0.5 ? 1 : 0) === p.l) correct++; g.fillStyle = p.l ? "#60a5fa" : "#fb923c"; g.beginPath(); g.arc(px(p.x), py(p.y), 4, 0, 7); g.fill(); g.strokeStyle = "#0f172a"; g.stroke(); });
+    $("steps").textContent = steps; if (loss !== null) $("loss").textContent = loss.toFixed(4);
+    $("acc").textContent = (correct / n * 100).toFixed(1) + "%"; $("calls").textContent = 26;
+    window.__result = { steps, loss, accuracy: correct / n, hidden: Hn };
+  }
+  $("reset").onclick = () => reset().catch(fail); $("hid").onchange = () => reset().catch(fail);
+  $("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "Resume" : "Pause"; };
+  await reset(); say("training");
+} catch (e) { fail(e); }
+</script>
+</html>

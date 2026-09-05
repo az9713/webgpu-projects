@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>WebGPU kernel projects — ten pages</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:28px 24px 60px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.5rem;margin:0 0 6px}
+  .lede{color:#94a3b8;margin:0 0 6px;font-size:.95rem;max-width:70ch}
+  #gpu{color:#2dd4bf;font-size:.85rem;min-height:1.4em;margin:0 0 22px}
+  #gpu.bad{color:#f87171}
+  ul{list-style:none;margin:0;padding:0;display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+  li{background:#1e293b;border:1px solid #334155;border-radius:8px}
+  a.card{display:block;padding:14px 16px;color:inherit;text-decoration:none;height:100%;box-sizing:border-box}
+  a.card:hover{border-color:#2dd4bf}
+  li:hover{border-color:#2dd4bf}
+  .n{color:#94a3b8;font-size:.75rem;letter-spacing:.05em;text-transform:uppercase}
+  .t{color:#e2e8f0;font-size:1rem;font-weight:600;margin:2px 0 6px}
+  .r{color:#94a3b8;font-size:.85rem;margin:0}
+  code{color:#2dd4bf}
+  footer{color:#94a3b8;font-size:.85rem;margin-top:32px;border-top:1px solid #1e293b;padding-top:16px;max-width:70ch}
+  footer a{color:#2dd4bf}
+</style>
+
+<h1>Ten WebGPU kernel projects</h1>
+<p class="lede">Each page is one self-contained HTML file. It loads <code>@huggingface/kernels@preview</code> from jsDelivr, runs on the GPU in this tab, and needs no npm, no bundler and no build step. Open this index over <code>http://</code>, not <code>file://</code> — the module import fails on a file URL.</p>
+<p class="lede">The result under each title was measured once on an RTX 3050. Read every number as &plusmn;10%.</p>
+<p id="gpu">checking WebGPU&hellip;</p>
+
+<ul>
+  <li><a class="card" href="01-quantum-wavepacket.html">
+    <div class="n">Catalogue 16 &middot; score 91</div>
+    <div class="t">A quantum wavepacket tunnelling through a barrier</div>
+    <p class="r">256&sup2; grid, 17 calls a step, 109 steps/s. Probability holds at 1.0000 until the edges absorb. A barrier of 0.6 against energy 0.405 lets 2.3% through.</p>
+  </a></li>
+
+  <li><a class="card" href="02-untrained-painting.html">
+    <div class="n">Catalogue 22 &middot; score 89</div>
+    <div class="t">An untrained neural network as a painting machine</div>
+    <p class="r">Random weights, no training, one readback. 512&sup2; in ~380 ms, 1024&sup2; in ~620 ms over 21 calls.</p>
+  </a></li>
+
+  <li><a class="card" href="03-quant-microscope.html">
+    <div class="n">Catalogue 36 &middot; score 89</div>
+    <div class="t">Quantisation error microscope</div>
+    <p class="r">Max error 0.035 at int8, 0.63 at 4-bit, 4.05 at 2-bit with a single scale. Per-row scales are selectable. 4-bit and 2-bit are simulated inside int8.</p>
+  </a></li>
+
+  <li><a class="card" href="04-poison-training.html">
+    <div class="n">Catalogue 81 &middot; score 89</div>
+    <div class="t">Poison the training set with a click</div>
+    <p class="r">Logistic regression, 8 calls a step, ~96 steps/s. Ten poisoned points tilt the line and halve the weights; clean accuracy still holds near 98%.</p>
+  </a></li>
+
+  <li><a class="card" href="05-readback-cost.html">
+    <div class="n">Catalogue 111 &middot; score 89</div>
+    <div class="t">The cost of coming back to JavaScript</div>
+    <p class="r">A chain of eight calls, two ways. Keeping the buffer on the card is 3.0 to 4.6&times; faster at N &ge; 256.</p>
+  </a></li>
+
+  <li><a class="card" href="06-mnist-train.html">
+    <div class="n">Catalogue 76 &middot; score 87</div>
+    <div class="t">Train a digit classifier in the tab, then draw a digit</div>
+    <p class="r">Fetches the 10.7 MB tfjs MNIST sprite. 784&rarr;64&rarr;10, batch 128, lr 0.3: 94.8% test accuracy after ~8 epochs at 80&ndash;92 steps/s.</p>
+  </a></li>
+
+  <li><a class="card" href="07-two-moons.html">
+    <div class="n">Catalogue 77 &middot; score 86</div>
+    <div class="t">Two moons, one hidden layer, gradients by hand</div>
+    <p class="r">2&rarr;16&rarr;1, 26 calls a step, ~100 steps/s, 99.5% at 630 steps. The ReLU gradient is a Greater and a Where.</p>
+  </a></li>
+
+  <li><a class="card" href="08-pca-power.html">
+    <div class="n">Catalogue 70 &middot; score 86</div>
+    <div class="t">Principal components without a decomposition kernel</div>
+    <p class="r">Power iteration on a 450&times;6 set: 27 iterations at an eigenvalue gap of 2.0, 88 at a gap of 1.1. Residual |Cv &minus; &lambda;v| &asymp; 1e-5.</p>
+  </a></li>
+
+  <li><a class="card" href="09-float-bits.html">
+    <div class="n">Catalogue 90 &middot; score 85</div>
+    <div class="t">Take a floating point number apart</div>
+    <p class="r">BitCast, BitShift and BitwiseAnd decode the sign, exponent and mantissa. exp(x) overflows at x &ge; 88.73, and this GPU flushes subnormals to zero.</p>
+  </a></li>
+
+  <li><a class="card" href="10-slime-mould.html">
+    <div class="n">Catalogue 115 &middot; score 85</div>
+    <div class="t">Slime mould: a million agents that build networks</div>
+    <p class="r">250k agents on 512&sup2;, 46 calls a step, 44 steps/s. A web forms by step ~140, then coarsens into thick veins.</p>
+  </a></li>
+</ul>
+
+<footer>
+  Background reading, one folder up: <a href="../webgpu-kernels-report.html">the research report</a> (13 sections, one of them measured on this laptop),
+  <a href="../webgpu-kernel-projects.html">the project catalogue</a> (121 projects, scored and sortable) and
+  <a href="../bench.html">the benchmark harness</a>.
+</footer>
+
+<script type="module">
+// ponytail: one probe, no fallback path. A missing adapter is the only thing worth warning about.
+const el = document.getElementById("gpu");
+const a = await navigator.gpu?.requestAdapter().catch(() => null);
+if (a) el.textContent = `WebGPU ready on ${a.info?.vendor ?? "?"} / ${a.info?.architecture ?? "?"} — Chrome picks one GPU at startup, so this is the adapter every page below will use.`;
+else { el.className = "bad"; el.textContent = "No WebGPU adapter. Every page below will fail — check chrome://gpu."; }
+</script>

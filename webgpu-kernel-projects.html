@@ -1,0 +1,1517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>What You Can Build With 207 WebGPU Kernels</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --text2:#cbd5e1;
+    --muted:#94a3b8; --accent:#fb923c; --accent2:#2dd4bf;
+    --border:#1e293b; --border2:#334155;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text2);
+    font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:48px 20px 96px}
+  header{border-bottom:1px solid var(--border2); padding-bottom:28px; margin-bottom:40px}
+  h1{color:var(--text); font-size:2.1rem; line-height:1.25; margin:0 0 12px; letter-spacing:-.02em}
+  .sub{color:var(--muted); font-size:1rem; margin:0}
+  h2{color:var(--accent); font-size:1.35rem; margin:64px 0 6px; letter-spacing:-.01em}
+  h2 .cat{color:var(--muted); font-size:.78rem; font-weight:400; display:block; letter-spacing:.11em; text-transform:uppercase; margin-bottom:6px}
+  h3{color:var(--accent2); font-size:1.02rem; margin:26px 0 6px}
+  p{margin:0 0 14px}
+  a{color:var(--accent2)}
+  a:hover{color:var(--accent)}
+  code{
+    background:var(--card); color:var(--text); border:1px solid var(--border2);
+    border-radius:4px; padding:1px 5px; font-size:.85em;
+    font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+    white-space:nowrap;
+  }
+  pre{
+    background:var(--card); border:1px solid var(--border2); border-radius:8px;
+    padding:16px 18px; overflow-x:auto; margin:0 0 20px;
+    font-size:.85rem; line-height:1.6; color:var(--text);
+    font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  }
+  pre code{background:none; border:0; padding:0; font-size:1em; white-space:pre}
+  .card{
+    background:var(--card); border:1px solid var(--border2);
+    border-left:3px solid var(--accent); border-radius:8px;
+    padding:18px 20px; margin:0 0 24px;
+  }
+  .card.teal{border-left-color:var(--accent2)}
+  .card p:last-child{margin-bottom:0}
+  .card .label{
+    display:block; color:var(--accent); font-size:.72rem; letter-spacing:.12em;
+    text-transform:uppercase; margin-bottom:8px; font-weight:600;
+  }
+  .card.teal .label{color:var(--accent2)}
+  .proj{border-left:2px solid var(--border2); padding-left:18px; margin:0 0 6px}
+  .proj:hover{border-left-color:var(--accent2)}
+  .k{margin:0 0 6px; line-height:2.1}
+  .why{color:var(--muted); font-size:.9rem; margin:0 0 4px}
+  .why b{color:var(--text2); font-weight:600}
+  .lead{color:var(--text2); border-bottom:1px solid var(--border2); padding-bottom:18px}
+  ul{margin:0 0 18px; padding-left:22px}
+  li{margin-bottom:8px}
+  .note{color:var(--muted); font-size:.88rem}
+  .tag{display:inline-block; font-size:.66rem; letter-spacing:.1em; text-transform:uppercase;
+       border:1px solid var(--border2); border-radius:4px; padding:1px 6px; color:var(--muted);
+       vertical-align:middle; margin-left:8px}
+  .tag.hy{color:var(--accent2); border-color:var(--accent2)}
+  .tag.ms{color:var(--accent); border-color:var(--accent)}
+  hr{border:0; border-top:1px solid var(--border2); margin:48px 0}
+  footer{color:var(--muted); font-size:.85rem; border-top:1px solid var(--border2); padding-top:24px; margin-top:64px}
+  .toc{background:var(--card); border:1px solid var(--border2); border-radius:8px; padding:18px 22px; margin-bottom:8px}
+  .toc ol{margin:0; padding-left:22px; columns:2; column-gap:34px}
+  .toc li{margin-bottom:5px; break-inside:avoid}
+  html{scroll-behavior:smooth}
+  .topnav{position:sticky; top:0; z-index:10; background:rgba(15,23,42,.96);
+          backdrop-filter:blur(8px); border-bottom:1px solid var(--border2)}
+  .topnav .inner{max-width:1180px; margin:0 auto; display:flex; gap:1px;
+                 overflow-x:auto; padding:7px 12px; scrollbar-width:none}
+  .topnav .inner::-webkit-scrollbar{height:0}
+  .topnav a{color:var(--muted); text-decoration:none; font-size:.75rem; white-space:nowrap;
+            padding:5px 7px; border-radius:5px; transition:background .12s,color .12s}
+  .topnav a:hover{color:var(--text); background:var(--border2)}
+  .topnav a.home{color:var(--accent); font-weight:600}
+  h2{scroll-margin-top:64px}
+  h3{scroll-margin-top:64px}
+
+  .sc{margin:6px 0 4px; font-size:.78rem; color:var(--muted); letter-spacing:.02em}
+  .sc b{color:var(--accent2); font-weight:600}
+  .sc .tot{color:var(--accent); font-weight:700}
+  .sc span{display:inline-block; margin-right:10px; white-space:nowrap}
+  table.rank{width:100%; border-collapse:collapse; font-size:.82rem; margin:0 0 4px}
+  table.rank th,table.rank td{border-bottom:1px solid var(--border2); padding:6px 7px; text-align:right}
+  table.rank th:nth-child(2),table.rank td:nth-child(2){text-align:left}
+  table.rank th{color:var(--accent); font-weight:600; position:sticky; top:44px;
+                background:var(--card); cursor:pointer; user-select:none; white-space:nowrap}
+  table.rank th:hover{color:var(--accent2)}
+  table.rank tbody tr:hover{background:var(--bg)}
+  table.rank td.t{color:var(--accent); font-weight:700}
+  table.rank td a{text-decoration:none}
+  .rwrap{overflow-x:auto; border:1px solid var(--border2); border-radius:8px;
+         padding:0 14px 10px; background:var(--card); margin-bottom:24px}
+  @media(max-width:620px){ .toc ol{columns:1} }
+</style>
+</head>
+<body>
+<nav class="topnav" aria-label="Category navigation">
+  <div class="inner">
+    <a href="#top" class="home">Top</a>
+    <a href="#c1">1 Audio</a>
+    <a href="#c2">2 Images</a>
+    <a href="#c3">3 Physics</a>
+    <a href="#c4">4 Art</a>
+    <a href="#c5">5 Transformers</a>
+    <a href="#c6">6 Quantisation</a>
+    <a href="#c7">7 Attention memory</a>
+    <a href="#c8">8 MoE</a>
+    <a href="#c9">9 Other sequences</a>
+    <a href="#c10">10 Retrieval</a>
+    <a href="#c11">11 Classical ML</a>
+    <a href="#c12">12 Training</a>
+    <a href="#c13">13 Linear algebra</a>
+    <a href="#c14">14 Primitives</a>
+    <a href="#c15">15 Vision heads</a>
+    <a href="#c16">16 Teaching</a>
+    <a href="#c17">17 Hardware</a>
+    <a href="#c18">18 Games</a>
+    <a href="#scores">Scores</a>
+    <a href="#cost">Cost</a>
+  </div>
+</nav>
+
+<div class="wrap" id="top">
+
+<header>
+  <h1>What You Can Build With 207 WebGPU Kernels</h1>
+  <p class="sub">Eighteen categories. 121 projects, ranked inside each category by visualization, significance and surprise, and scored on <a href="#scores">seven independent axes</a> with a weighted total. Every one can be built as a single HTML file for this laptop. Compiled 4 September 2026.</p>
+</header>
+
+<p class="lead">This follows <a href="webgpu-kernels-report.html">the research report</a>. That document explained what the kernels are. This one answers a different question: what can a person actually make. Every kernel name below was copied from the Hub API list of 207. None are invented.</p>
+
+<h2 id="rules"><span class="cat">Before the list</span>The four rules every project obeys</h2>
+
+<p><strong>One file, no build step.</strong> Each project is a single HTML page, served by <code>python -m http.server</code>. It imports the library from a CDN. There is no npm, no bundler, no server code. A <code>file://</code> page fails, because the module import is blocked.</p>
+
+<p><strong>Keep the data on the GPU.</strong> Pass <code>{ output: "gpu" }</code> between steps. Read back once, at the end. On this RTX 3050 that turned a 1024&times;1024 <code>ai.onnx.MatMul</code> from 26 ms into 9.3 ms. This rule matters more than any other optimisation here.</p>
+
+<p><strong>There is no model runner.</strong> You cannot point the library at an <code>.onnx</code> file. Every project that mentions a model is wired operation by operation, by hand. Where a whole model is needed, Transformers.js runs the model and kernels do the extra maths. Those carry a <span class="tag hy">hybrid</span> tag.</p>
+
+<p><strong>No camera.</strong> Image projects take a dropped file or a canvas. Audio projects work from a dropped file, and from the microphone as well if you want one.</p>
+
+<div class="card">
+  <span class="label">Four absences to check before you design anything</span>
+  <p><strong>No random number generator.</strong> There is no <code>RandomNormal</code>, no <code>RandomUniform</code>, no <code>Multinomial</code>. The <code>ai.onnx.Dropout</code> manifest is explicit: the package is inference-only, it copies the tensor unchanged, and seeded randomness is not supported. Make noise in JavaScript, upload it once, then re-use it on the GPU.</p>
+  <p><strong>No sort.</strong> <code>ai.onnx.TopK</code> is the only ordering operation in the set. A full sort must happen in JavaScript.</p>
+  <p><strong>No matrix inverse and no decomposition.</strong> There is no <code>Inverse</code>, <code>Solve</code>, <code>QR</code>, <code>SVD</code> or <code>Cholesky</code>. Every linear-algebra project below is therefore iterative. Category 13 is built on that single fact.</p>
+  <p><strong>The fastest MatMul path is closed on this laptop.</strong> Chrome reports <code>subgroup-matrix: false</code> on both of your adapters. <code>shader-f16</code> and <code>subgroups</code> are true. You get a correct answer on a slower shader variant, not an error.</p>
+</div>
+
+<p class="note"><strong>Plumbing kernels are not repeated.</strong> <code>ai.onnx.Reshape</code>, <code>Transpose</code>, <code>Concat</code>, <code>Slice</code>, <code>Pad</code>, <code>Tile</code>, <code>Expand</code>, <code>Squeeze</code>, <code>Unsqueeze</code>, <code>Flatten</code>, <code>Split</code> and <code>Cast</code> appear in nearly every project. Naming them 121 times would add nothing. <span class="tag ms">ms</span> marks a <code>com.microsoft</code> kernel: read its card first, because these expect ONNX Runtime packing conventions.</p>
+
+<p class="note"><strong>The ranking uses three axes: visualization, significance and surprise.</strong> Each project says which one put it where it is. Some entries say <em>teaching value</em> instead. Treat that as a narrow form of significance: the project is correct and clear, but it explains something rather than doing something new. Those entries always sit at the tail of their category.</p>
+
+<div class="toc">
+  <ol>
+    <li><a href="#c1">Audio, signals and music</a></li>
+    <li><a href="#c2">Images and pixels</a></li>
+    <li><a href="#c3">Physics and simulation</a></li>
+    <li><a href="#c4">Generative art</a></li>
+    <li><a href="#c5">Transformer internals</a></li>
+    <li><a href="#c6">Quantisation and compression</a></li>
+    <li><a href="#c7">Attention memory systems</a></li>
+    <li><a href="#c8">Mixture of Experts</a></li>
+    <li><a href="#c9">Sequences without transformers</a></li>
+    <li><a href="#c10">Embeddings, retrieval and search</a></li>
+    <li><a href="#c11">Classical machine learning</a></li>
+    <li><a href="#c12">Training in the browser</a></li>
+    <li><a href="#c13">Iterative linear algebra and graphs</a></li>
+    <li><a href="#c14">General GPU primitives</a></li>
+    <li><a href="#c15">Vision heads by hand</a></li>
+    <li><a href="#c16">Teaching and numerical toys</a></li>
+    <li><a href="#c17">Hardware forensics</a></li>
+    <li><a href="#c18">Games and interactive toys</a></li>
+    <li><a href="#cost">What building them all would cost</a></li>
+  </ol>
+</div>
+
+<h2 id="c1"><span class="cat">Category 1</span>Audio, signals and music</h2>
+<p>The collection contains a full Fourier stack: <code>ai.onnx.DFT</code>, <code>ai.onnx.STFT</code> and three window functions. No audio library is needed in the page. Every project here reads a dropped audio file, and can take the microphone as well.</p>
+
+<div class="proj">
+<h3 id="p1">1 &middot; Convolution reverb — put a voice inside a cathedral</h3>
+<p>You drop a dry vocal and an impulse response of a real room. The page plays the voice back inside that room. The maths is fast convolution: transform both signals, multiply them as complex numbers, transform back.</p>
+<p class="k"><code>ai.onnx.DFT</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Add</code></p>
+<p class="why"><b>Ranks here for</b> surprise and significance — this is a professional audio tool, and it is four kernel calls. <b>Ceiling</b> — a long impulse response needs block convolution, so split the signal and overlap-add the pieces.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p2">2 &middot; Phase vocoder — slow speech down without lowering the pitch</h3>
+<p>A slider takes the playback to half speed. The voice stays at the same pitch. You watch the spectrogram stretch while the horizontal bands stay level.</p>
+<p class="k"><code>ai.onnx.HannWindow</code> <code>ai.onnx.STFT</code> <code>ai.onnx.Atan</code> <code>ai.onnx.Sin</code> <code>ai.onnx.Cos</code> <code>ai.onnx.DFT</code></p>
+<p class="why"><b>Ranks here for</b> significance — this is the algorithm behind every time-stretch in every audio editor. <b>Ceiling</b> — phase unwrapping between frames is sequential, so keep that step in JavaScript over GPU-resident data.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 72/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p3">3 &middot; Audio fingerprint matcher — the Shazam trick, visible</h3>
+<p>Two files go in. The page finds spectrogram peaks in both, draws the constellation of peaks, and shows the matching pairs as lines between the two images.</p>
+<p class="k"><code>ai.onnx.STFT</code> <code>ai.onnx.MaxPool</code> <code>ai.onnx.Equal</code> <code>ai.onnx.NonZero</code> <code>ai.onnx.TopK</code></p>
+<p class="why"><b>Ranks here for</b> surprise — peak picking is a max-pool followed by an equality test, which almost nobody expects. <b>Ceiling</b> — hash lookup is a JavaScript map, not a kernel.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p4">4 &middot; Live spectrogram waterfall</h3>
+<p>You speak, or you drop a song. A scrolling colour waterfall shows the frequency content. Every frame costs two kernel calls and no JavaScript arithmetic.</p>
+<p class="k"><code>ai.onnx.HannWindow</code> <code>ai.onnx.STFT</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Sqrt</code> <code>ai.onnx.Log</code></p>
+<p class="why"><b>Ranks here for</b> visualization — it is the clearest first build in this whole document. <b>Ceiling</b> — audio frames are small, so the GPU will idle. The value is the missing library, not the speed.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p5">5 &middot; Spectral denoiser with a visible noise profile</h3>
+<p>You mark two seconds of silence. The page learns the noise spectrum, subtracts it from every frame, and plays the clean audio. A second waterfall shows exactly what was removed.</p>
+<p class="k"><code>ai.onnx.STFT</code> <code>ai.onnx.ReduceMean</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Clip</code> <code>ai.onnx.DFT</code></p>
+<p class="why"><b>Ranks here for</b> visualization — showing the removed noise as its own image is more convincing than any before-and-after pair. <b>Ceiling</b> — aggressive subtraction adds musical artefacts. That is the algorithm, not the kernel.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p6">6 &middot; Pitch tracker by cepstrum</h3>
+<p>You sing. The page names the note. The trick is a Fourier transform of the logarithm of a Fourier transform, which turns a harmonic stack into a single spike.</p>
+<p class="k"><code>ai.onnx.DFT</code> <code>ai.onnx.Log</code> <code>ai.onnx.Abs</code> <code>ai.onnx.ArgMax</code></p>
+<p class="why"><b>Ranks here for</b> surprise — the cepstrum is a beautiful idea and it is two DFT calls. <b>Ceiling</b> — low male voices need a long window, which adds latency.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>2</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 73/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p7">7 &middot; Window function explorer</h3>
+<p>Three windows, three spectra, side by side. You see why a rectangular window smears a pure tone and why a Blackman window does not.</p>
+<p class="k"><code>ai.onnx.HannWindow</code> <code>ai.onnx.HammingWindow</code> <code>ai.onnx.BlackmanWindow</code> <code>ai.onnx.DFT</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — spectral leakage is hard to explain and easy to show. <b>Ceiling</b> — it is a static page. There is no ambition in it beyond clarity.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>1</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>2</b></span><span class="tot">total 65/100</span></p>
+</div>
+
+<h2 id="c2"><span class="cat">Category 2</span>Images and pixels</h2>
+<p>Every project takes a dropped image file or a canvas. The convolution, pooling, sampling and normalisation kernels are all here, and several of them do things that are hard to write by hand in WebGL.</p>
+
+<div class="proj">
+<h3 id="p8">1 &middot; Seam carving — the photo shrinks and the subject does not</h3>
+<p>You drag a slider. The image narrows. A person in the frame stays the correct shape, because the page removes a wandering low-energy path of pixels instead of scaling.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Abs</code> <code>ai.onnx.Add</code> <code>ai.onnx.Min</code> <code>ai.onnx.ArgMin</code> <code>ai.onnx.Slice</code> <code>ai.onnx.Concat</code></p>
+<p class="why"><b>Ranks here for</b> visualization and surprise — the effect looks impossible the first time you see it. <b>Ceiling</b> — the dynamic program runs one row at a time, so it is one dispatch per row. A tall image costs many small dispatches.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 84/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p9">2 &middot; Seamless clone — paste a face into another photo with no visible edge</h3>
+<p>You drop two images and draw a region. The page pastes the region and the seam disappears, because it copies gradients rather than pixels and then solves for the result.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Where</code></p>
+<p class="why"><b>Ranks here for</b> significance — Poisson blending is the core of every modern healing brush. <b>Ceiling</b> — there is no linear solver in the 207, so this is Jacobi iteration with a 3&times;3 stencil. Hundreds of iterations, each one cheap.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 79/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p10">3 &middot; Warp studio — drag the corners, bend the picture</h3>
+<p>Perspective correction, ripple, swirl and pinch, applied live while you drag. The manifest for the sampler confirms rank-4 NCHW input with linear, nearest and cubic interpolation.</p>
+<p class="k"><code>ai.onnx.AffineGrid</code> <code>ai.onnx.GridSample</code> <code>ai.onnx.Resize</code></p>
+<p class="why"><b>Ranks here for</b> visualization — a warp is instant feedback, and cubic sampling looks professional. <b>Ceiling</b> — the flow field for a non-affine warp is built in JavaScript once, then re-used.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 73/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p11">4 &middot; Convolution unmasked — im2col, one matrix multiply, and back</h3>
+<p>Two panels compute the same blurred image. The left one calls the convolution kernel. The right one flattens the patches, does a single matrix multiply, and folds the result back. The pixels match exactly.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.Col2Im</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Abs</code></p>
+<p class="why"><b>Ranks here for</b> significance — this identity is why GPUs run deep learning at all, and almost every explanation of it is a diagram rather than a running program. <b>Ceiling</b> — the im2col expansion uses a lot of memory. Keep the image small.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 84/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p12">5 &middot; Sub-pixel upscaling with a channel shuffle</h3>
+<p>A small image becomes a large one. The extra detail comes out of the channel dimension, not from interpolation. Two clicks switch between the shuffle and a plain resize, so you can see the difference.</p>
+<p class="k"><code>ai.onnx.DepthToSpace</code> <code>ai.onnx.SpaceToDepth</code> <code>ai.onnx.Conv</code> <code>ai.onnx.Resize</code></p>
+<p class="why"><b>Ranks here for</b> surprise — <code>DepthToSpace</code> is exactly the pixel-shuffle layer of every super-resolution network, and it is one call. <b>Ceiling</b> — without trained weights the result is a demonstration, not a real upscaler. Add a small model to make it one.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>2</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 75/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p13">6 &middot; Filter rack with an editable matrix</h3>
+<p>A 3&times;3 grid of numbers you can type into. Edge detection, sharpen, emboss and blur appear as you type. Presets sit under the grid.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>com.microsoft.FusedConv</code><span class="tag ms">ms</span> <code>ai.onnx.Clip</code> <code>ai.onnx.Pad</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — the fused variant also lets you compare a fused activation against a separate one. <b>Ceiling</b> — it is the classic demo. Its worth is as a base for the harder projects above.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>3</b></span><span>surprise <b>1</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>3</b></span><span class="tot">total 68/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p14">7 &middot; Pooling and unpooling, made visible</h3>
+<p>The page pools an image down, then unpools it back. The unpooled image is sparse: only the winning pixels survive. You are looking at exactly which pixels a network keeps.</p>
+<p class="k"><code>ai.onnx.MaxPool</code> <code>ai.onnx.MaxUnpool</code> <code>ai.onnx.AveragePool</code> <code>ai.onnx.LpPool</code> <code>ai.onnx.LRN</code></p>
+<p class="why"><b>Ranks here for</b> surprise — <code>MaxUnpool</code> and <code>LRN</code> are obscure kernels and this is the one page that makes them obvious. <b>Ceiling</b> — small teaching artifact. No further ambition.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>3</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>2</b></span><span class="tot">total 79/100</span></p>
+</div>
+
+<h2 id="c3"><span class="cat">Category 3</span>Physics and simulation</h2>
+<p>A convolution is a stencil. That single observation turns most classical simulation into kernel calls. The wave demo in the launch video reached 60 fps against 6.7 fps for the same maths in JavaScript, and everything here is the same shape of work.</p>
+
+<div class="proj">
+<h3 id="p15">1 &middot; Real-time fluid you can stir with the mouse</h3>
+<p>Smoke and dye swirl across a grid. You drag and the flow follows your hand. Movement uses backward tracing through the flow field, and pressure uses repeated stencil passes.</p>
+<p class="k"><code>ai.onnx.GridSample</code> <code>ai.onnx.Conv</code> <code>ai.onnx.Add</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> visualization and surprise — the semi-Lagrangian advection step of a stable-fluids solver <em>is</em> <code>GridSample</code>, exactly, with no adaptation. <b>Ceiling</b> — the pressure solve wants 20 to 40 Jacobi iterations per frame. Each is one dispatch, so watch the frame budget.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 84/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p16">2 &middot; A quantum wavepacket tunnelling through a barrier</h3>
+<p>You draw a potential barrier with the mouse. A wavepacket runs into it. Part of it bounces and part of it appears on the far side. The colour shows the phase.</p>
+<p class="k"><code>ai.onnx.DFT</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Exp</code> <code>ai.onnx.Sin</code> <code>ai.onnx.Cos</code> <code>ai.onnx.Add</code></p>
+<p class="why"><b>Ranks here for</b> surprise and significance — the split-step method alternates a multiply in position space with a multiply in frequency space, so it is a DFT sandwich. Real quantum mechanics, in a browser tab, with no library. <b>Ceiling</b> — a 512&times;512 complex grid is comfortable. Larger grids need a batched two-dimensional transform.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 91/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p17">3 &middot; Reaction and diffusion — Turing patterns you can paint into</h3>
+<p>Spots, stripes and coral shapes grow across a million-cell grid. You paint chemical into it and watch the pattern reorganise around your stroke.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Add</code> <code>ai.onnx.Clip</code></p>
+<p class="why"><b>Ranks here for</b> visualization — it is the most beautiful output per line of code in this document. <b>Ceiling</b> — the two feed and kill parameters decide everything. Put them on sliders or the page looks dead.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>3</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>5</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p18">4 &middot; Ripple tank with a double slit</h3>
+<p>Waves cross a barrier with two openings. Interference fringes form on the far side. You drag the slit spacing and watch the fringes move.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Where</code> <code>ai.onnx.Clip</code></p>
+<p class="why"><b>Ranks here for</b> significance — this is the most famous experiment in physics and it is a five-point stencil. <b>Ceiling</b> — absorbing boundaries need a damping ring, or reflections ruin the picture.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>2</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 79/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p19">5 &middot; N-body galaxy</h3>
+<p>Four thousand stars pull on each other. Arms form. You seed the disc and watch it wind up.</p>
+<p class="k"><code>ai.onnx.Sub</code> <code>ai.onnx.Mul</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.Pow</code> <code>ai.onnx.Einsum</code></p>
+<p class="why"><b>Ranks here for</b> significance — all-pairs force is an N&times;N problem, which is the exact shape the GPU is best at. <b>Ceiling</b> — memory grows with the square of the body count. Four thousand bodies is 16 million pairs and is comfortable. Forty thousand is not.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p20">6 &middot; Cloth on a lattice</h3>
+<p>A sheet hangs from two corners and swings. You cut it with the mouse and it tears.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Add</code> <code>ai.onnx.Where</code></p>
+<p class="why"><b>Ranks here for</b> visualization — spring forces on a regular grid are a stencil, so the whole sheet updates in one call. <b>Ceiling</b> — a tear breaks the regular grid, so handle cuts as a mask rather than as a change of topology.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p21">7 &middot; Heat equation sandbox</h3>
+<p>You paint hot and cold regions and press play. Heat spreads. Isotherms appear as contour lines.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Clip</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — it is the simplest correct simulation in this list and a good first build. <b>Ceiling</b> — the explicit scheme goes unstable if the time step is too large. Keep the step small or use more iterations.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>3</b></span><span>surprise <b>1</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>2</b></span><span class="tot">total 65/100</span></p>
+</div>
+
+<h2 id="c4"><span class="cat">Category 4</span>Generative art</h2>
+<p>Remember the missing random number generator. Make the noise in JavaScript once, upload it, and re-use it. Everything after that is pure GPU work.</p>
+
+<div class="proj">
+<h3 id="p22">1 &middot; An untrained neural network as a painting machine</h3>
+<p>Feed every pixel coordinate into a small random network. Read the three outputs as colour. The result is a smooth, organic, high-resolution image that no person designed. Re-roll the weights and get a completely different one.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Tanh</code> <code>ai.onnx.Sin</code> <code>ai.onnx.Sigmoid</code> <code>ai.onnx.Concat</code></p>
+<p class="why"><b>Ranks here for</b> surprise — it is a neural network that was never trained, and it produces art. It is also the cheapest possible use of a matrix multiply kernel. <b>Ceiling</b> — at 1024&times;1024 the first layer is a million-row matrix multiply. It is a thin, wide shape, so it does far less arithmetic per row than the one measured number here, which is 9.3 ms for a 1024 square multiply.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 89/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p23">2 &middot; Flow-field particle painting</h3>
+<p>A million particles drift along an invisible vector field and leave trails. The field bends as you move the mouse.</p>
+<p class="k"><code>ai.onnx.GridSample</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code> <code>ai.onnx.ScatterND</code></p>
+<p class="why"><b>Ranks here for</b> visualization — sampling a field at a million arbitrary positions is one kernel call. <b>Ceiling</b> — the scatter into the accumulation image can collide. Accept the small error or accumulate in several passes.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>2</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 69/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p24">3 &middot; Strange attractor density maps</h3>
+<p>Lorenz, Clifford and De Jong attractors, drawn as a density image from a million iterated points. Fine filament structure appears that a line drawing never shows.</p>
+<p class="k"><code>ai.onnx.Sin</code> <code>ai.onnx.Cos</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Add</code> <code>ai.onnx.ScatterND</code> <code>ai.onnx.Log</code></p>
+<p class="why"><b>Ranks here for</b> visualization — density accumulation is what makes these look like photographs instead of scribble. <b>Ceiling</b> — each iteration is a dispatch, so run a million points for 200 steps rather than one point for 200 million.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>2</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 72/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p25">4 &middot; Domain-warped noise landscape</h3>
+<p>Clouds, marble, wood grain and terrain, all from one noise texture pushed through itself twice. Sliders control the warp strength.</p>
+<p class="k"><code>ai.onnx.GridSample</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Add</code> <code>ai.onnx.Resize</code> <code>ai.onnx.Clip</code></p>
+<p class="why"><b>Ranks here for</b> surprise — domain warping is famous among shader writers and is three sampling calls here. <b>Ceiling</b> — the base noise comes from JavaScript, because no kernel generates random numbers.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>2</b></span><span>surprise <b>3</b></span><span>kernel <b>2</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p26">5 &middot; Deep zoom into the Mandelbrot set</h3>
+<p>You click and the view dives. The iteration count rises as you go deeper and the boundary keeps producing new structure.</p>
+<p class="k"><code>ai.onnx.Mul</code> <code>ai.onnx.Add</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Where</code> <code>ai.onnx.ReduceSum</code></p>
+<p class="why"><b>Ranks here for</b> visualization — a classic, and a clean measure of raw throughput. <b>Ceiling</b> — single precision runs out at around 10<sup>-7</sup> zoom. Deeper needs double-double arithmetic, which these kernels do not have.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>2</b></span><span>surprise <b>1</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 65/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p27">6 &middot; Truchet tiles and quasi-periodic patterns</h3>
+<p>A grid of tiles, each rotated by a rule. Curves join across tile edges and form long continuous paths.</p>
+<p class="k"><code>ai.onnx.Mod</code> <code>ai.onnx.Where</code> <code>ai.onnx.Floor</code> <code>ai.onnx.GridSample</code></p>
+<p class="why"><b>Ranks here for</b> visualization — simple rules, complex result, and it renders instantly at any size. <b>Ceiling</b> — the tile choice needs a random value per cell, which again comes from JavaScript.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>2</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 64/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p28">7 &middot; Checkerboard artefacts as a subject</h3>
+<p>Transposed convolution upsamples a small image and leaves a regular grid pattern. The page turns that famous flaw into a controllable texture generator.</p>
+<p class="k"><code>ai.onnx.ConvTranspose</code> <code>ai.onnx.Resize</code> <code>ai.onnx.Sub</code></p>
+<p class="why"><b>Ranks here for</b> surprise — it explains a real artefact that ruined many generative models, by letting you produce it deliberately. <b>Ceiling</b> — narrow subject. Best as one panel inside a larger page.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>2</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>2</b></span><span class="tot">total 68/100</span></p>
+</div>
+
+<h2 id="c5"><span class="cat">Category 5</span>Transformer internals</h2>
+<p>This is the richest part of the catalogue. The attention kernel is opset-24 with multi-head, grouped-query and multi-query support, 3D or 4D inputs, and past and present key-value caches. Real weights come from a Hugging Face <code>resolve/</code> URL, parsed as safetensors in about thirty lines of JavaScript. Check that the fetch is allowed from localhost, and keep the model near or below 500M parameters for 4 GB of video memory.</p>
+
+<div class="proj">
+<h3 id="p29">1 &middot; One full decoder layer, real weights, every head visible</h3>
+<p>You type a sentence. The page runs a complete Llama-style block on your GPU and draws each attention head as a heat map. Nothing leaves the machine.</p>
+<p class="k"><code>ai.onnx.RMSNormalization</code> <code>ai.onnx.RotaryEmbedding</code> <code>ai.onnx.Attention</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.SwiGLU</code> <code>ai.onnx.Add</code></p>
+<p class="why"><b>Ranks here for</b> all three axes — it is the best-looking, most significant and least expected thing on this list. The launch demo showed one mechanism in twenty lines. This is the whole layer. <b>Ceiling</b> — the gate and value inputs to <code>SwiGLU</code> must have identical shapes, because the kernel does not broadcast.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>5</b></span><span>cost <b>5</b></span><span>risk <b>4</b></span><span>standalone <b>5</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p30">2 &middot; Head atlas — find the induction heads yourself</h3>
+<p>Every head of every layer, as a grid of small heat maps. Click one to enlarge it. Feed a repeated sequence and watch specific heads light up on the repeat.</p>
+<p class="k"><code>ai.onnx.Attention</code> <code>com.microsoft.MultiHeadAttention</code><span class="tag ms">ms</span> <code>ai.onnx.Softmax</code> <code>ai.onnx.TopK</code></p>
+<p class="why"><b>Ranks here for</b> significance — induction heads are a genuine research finding, and this makes them reproducible on a laptop. <b>Ceiling</b> — hundreds of heat maps at once needs one canvas and manual tiling, not hundreds of elements.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>5</b></span><span>risk <b>4</b></span><span>standalone <b>5</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p31">3 &middot; Logit lens — read the model's mind at every layer <span class="tag hy">hybrid</span></h3>
+<p>Take the hidden state after each layer, apply the final norm and the output matrix, and show the top five tokens. You watch the prediction form, layer by layer.</p>
+<p class="k"><code>ai.onnx.LayerNormalization</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Softmax</code></p>
+<p class="why"><b>Ranks here for</b> surprise — the answer is often decided several layers before the end, and seeing that happen is memorable. <b>Ceiling</b> — needs hidden states from a real model, so run the model with Transformers.js and do the lens with kernels.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>3</b></span><span>cost <b>4</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p32">4 &middot; Rotary position embedding, drawn as rotation</h3>
+<p>Each pair of dimensions is a point on a circle. As the token position advances, the point rotates. Two tokens at any fixed distance always keep the same angle between them.</p>
+<p class="k"><code>ai.onnx.RotaryEmbedding</code> <code>com.microsoft.GemmaRotaryEmbedding</code><span class="tag ms">ms</span> <code>com.microsoft.MRotaryEmbedding</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> teaching value — position encoding confuses almost everyone, and the rotation picture ends the confusion in ten seconds. <b>Ceiling</b> — the kernel is opset-23, float16 and float32 only. Position identifiers stay logical 64-bit integers.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p33">5 &middot; Three norms, one set of activations</h3>
+<p>The same hidden state goes through layer norm, simplified layer norm and RMS norm. Three histograms update together. You see exactly what removing the mean subtraction costs.</p>
+<p class="k"><code>ai.onnx.LayerNormalization</code> <code>ai.onnx.SimplifiedLayerNormalization</code> <code>ai.onnx.RMSNormalization</code> <code>com.microsoft.SkipLayerNormalization</code><span class="tag ms">ms</span> <code>com.microsoft.SkipSimplifiedLayerNormalization</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> significance — modern models dropped mean subtraction for speed, and this page shows whether that mattered. <b>Ceiling</b> — the skip variants fold the residual addition inside, so compare them against an explicit add, not against each other.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 68/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p34">6 &middot; Fusion audit — do the fused kernels give the same answer</h3>
+<p>Run bias then activation as two calls. Run the fused kernel. Subtract. Show the largest difference and both timings.</p>
+<p class="k"><code>com.microsoft.BiasGelu</code><span class="tag ms">ms</span> <code>com.microsoft.FastGelu</code><span class="tag ms">ms</span> <code>com.microsoft.QuickGelu</code><span class="tag ms">ms</span> <code>com.microsoft.BiasSplitGelu</code><span class="tag ms">ms</span> <code>com.microsoft.GemmFastGelu</code><span class="tag ms">ms</span> <code>ai.onnx.Gelu</code></p>
+<p class="why"><b>Ranks here for</b> surprise — <code>FastGelu</code> and <code>QuickGelu</code> are approximations, so the difference is real and measurable, not zero. <b>Ceiling</b> — run-to-run timing variance on this laptop is about 10%. Ignore any gap smaller than that.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>5</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 65/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p35">7 &middot; Temperature, top-k and the hard maximum</h3>
+<p>One row of logits. Three sliders. You watch the probability distribution flatten and sharpen, and see the point where sampling collapses to a single choice.</p>
+<p class="k"><code>ai.onnx.Softmax</code> <code>ai.onnx.LogSoftmax</code> <code>ai.onnx.Hardmax</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — every person who uses a language model API sets temperature, and few have seen what it does. <b>Ceiling</b> — small page. Fold it into the decoder-layer project as a panel.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>3</b></span><span class="tot">total 75/100</span></p>
+</div>
+
+<h2 id="c6"><span class="cat">Category 6</span>Quantisation and compression</h2>
+<p>Thirteen kernels in the set deal with reduced precision. This is the part of the collection with the clearest practical payoff, because a 4 GB card is exactly the case where four-bit weights decide whether a model fits.</p>
+
+<div class="proj">
+<h3 id="p36">1 &middot; Quantisation error microscope</h3>
+<p>One weight matrix, shown five times: full precision, 8-bit, 4-bit, 2-bit, and the error image between each pair. Under each panel sits its size in megabytes. The error picture is where the interest is, because the damage is not spread evenly.</p>
+<p class="k"><code>ai.onnx.QuantizeLinear</code> <code>ai.onnx.DequantizeLinear</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Abs</code> <code>ai.onnx.ReduceMax</code></p>
+<p class="why"><b>Ranks here for</b> visualization and significance — quantisation is normally an abstract claim in a table. Here it is a picture. <b>Ceiling</b> — none worth naming. This is a small, honest, high-value page.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>1</b></span><span>standalone <b>5</b></span><span class="tot">total 89/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p37">2 &middot; The same layer at four bits and at thirty-two</h3>
+<p>Two panels compute an identical linear layer. One holds full weights. One holds four-bit blocks with per-block scales. The outputs match closely and one uses a fraction of the memory.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>com.microsoft.MatMulNBits</code><span class="tag ms">ms</span> <code>com.microsoft.MatMulBnb4</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> significance — this is the technique that puts a language model on a 4 GB laptop. <b>Ceiling</b> — the manifest supports 2, 4 and 8 bit codes packed low first, with standard unpacked zero points. It does not implement the deprecated group index, prepacked weights or bfloat16.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>4</b></span><span>risk <b>4</b></span><span>standalone <b>4</b></span><span class="tot">total 67/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p38">3 &middot; Block size sweep — where quality falls off a cliff</h3>
+<p>A chart with block size on one axis and error on the other. You drag through the power-of-two block sizes and watch the curve bend.</p>
+<p class="k"><code>com.microsoft.MatMulNBits</code><span class="tag ms">ms</span> <code>ai.onnx.Sub</code> <code>ai.onnx.ReduceL2</code> <code>ai.onnx.ReduceMean</code></p>
+<p class="why"><b>Ranks here for</b> significance — everyone copies a block size of 32 or 128 from a config file without knowing why. This page answers that. <b>Ceiling</b> — the answer depends on the weight distribution, so use real weights, not a made-up matrix.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>4</b></span><span>risk <b>4</b></span><span>standalone <b>4</b></span><span class="tot">total 65/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p39">4 &middot; A vocabulary table that fits in a pocket</h3>
+<p>An embedding table of 32,000 rows, stored quantised, read directly by the gather kernel with no separate dequantisation pass. The page shows the memory before and after.</p>
+<p class="k"><code>com.microsoft.GatherBlockQuantized</code><span class="tag ms">ms</span> <code>ai.onnx.Gather</code> <code>ai.onnx.DequantizeLinear</code></p>
+<p class="why"><b>Ranks here for</b> surprise — a gather that dequantises inside itself is an unusual kernel and it removes a whole pass. <b>Ceiling</b> — read the card. The block layout must match exactly, or the rows come back as noise.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>5</b></span><span>cost <b>4</b></span><span>risk <b>4</b></span><span>standalone <b>3</b></span><span class="tot">total 64/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p40">5 &middot; Integer image pipeline against a float one</h3>
+<p>A dropped image runs through a small convolution stack twice: once in float, once in 8-bit integers. The difference map sits between them, amplified so the errors are visible.</p>
+<p class="k"><code>ai.onnx.QLinearConv</code> <code>ai.onnx.ConvInteger</code> <code>ai.onnx.QLinearMatMul</code> <code>ai.onnx.MatMulInteger</code> <code>ai.onnx.Conv</code></p>
+<p class="why"><b>Ranks here for</b> visualization — integer inference is usually discussed as accuracy percentages. Here you see where in the picture it went wrong. <b>Ceiling</b> — picking the right scale and zero point per layer is the real work. Do not expect defaults to look good.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p41">6 &middot; Watch the scale get chosen</h3>
+<p>You type numbers into a tensor. The page shows the scale and zero point the dynamic quantiser picks, and how one outlier destroys the resolution of every other value.</p>
+<p class="k"><code>ai.onnx.DynamicQuantizeLinear</code> <code>ai.onnx.ReduceMin</code> <code>ai.onnx.ReduceMax</code> <code>ai.onnx.Round</code> <code>ai.onnx.Clip</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — the outlier problem is the whole reason modern quantisation methods exist, and one typed number demonstrates it. <b>Ceiling</b> — tiny page, big idea. Pair it with the microscope above.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>3</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p42">7 &middot; The fused quantised blocks of a real model</h3>
+<p>Three kernels that exist only because they appear together in every quantised transformer: the packed query-key-value projection, the packed feed-forward block, and the quantised expert mixture.</p>
+<p class="k"><code>com.microsoft.MatMulNBitsQkv</code><span class="tag ms">ms</span> <code>com.microsoft.MatMulNBitsMlp</code><span class="tag ms">ms</span> <code>com.microsoft.QMoE</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> significance — these are the kernels a real quantised model actually calls, so this page is the closest thing to a runtime in the set. <b>Ceiling</b> — highest packing risk in this document. Read all three cards before writing any code.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>5</b></span><span>cost <b>5</b></span><span>risk <b>5</b></span><span>standalone <b>3</b></span><span class="tot">total 52/100</span></p>
+</div>
+
+<h2 id="c7"><span class="cat">Category 7</span>Attention memory systems</h2>
+<p>Four kernels exist only to manage the memory that attention needs. They are the least glamorous part of the catalogue and the part that decides whether long context is affordable. All four are <code>com.microsoft</code> kernels, so read the cards first.</p>
+
+<div class="proj">
+<h3 id="p43">1 &middot; Paged attention, drawn as a memory map</h3>
+<p>Blocks of key-value cache appear on screen as coloured rectangles. Each new token claims a block. You start a second conversation and watch it share blocks with the first one instead of copying them.</p>
+<p class="k"><code>com.microsoft.PagedAttention</code><span class="tag ms">ms</span> <code>ai.onnx.TensorScatter</code> <code>ai.onnx.Gather</code></p>
+<p class="why"><b>Ranks here for</b> significance and surprise — paged attention is the idea that made modern serving cheap, and almost nobody has seen it as a picture. <b>Ceiling</b> — the block table layout is strict. Build the picture from your own book-keeping, not from guesses about the kernel's internals.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>5</b></span><span>cost <b>5</b></span><span>risk <b>4</b></span><span>standalone <b>5</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p44">2 &middot; Multi-head against grouped-query against multi-query</h3>
+<p>The same prompt, three head arrangements, three cache sizes on one bar chart. The outputs are almost identical and one cache is eight times smaller than another.</p>
+<p class="k"><code>ai.onnx.Attention</code> <code>com.microsoft.GroupQueryAttention</code><span class="tag ms">ms</span> <code>com.microsoft.MultiHeadAttention</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> significance — every recent open model uses grouped-query attention, and this page shows why in one chart. <b>Ceiling</b> — the base attention kernel already supports all three modes through its head-count arguments, so use it as the reference and the others as the comparison.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>4</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 69/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p45">3 &middot; Sparse attention pattern explorer</h3>
+<p>A large square mask. You drag a window width and a count of global tokens. The mask redraws, and a counter shows how many of the pairs survive.</p>
+<p class="k"><code>com.microsoft.SparseAttention</code><span class="tag ms">ms</span> <code>ai.onnx.Trilu</code> <code>ai.onnx.Where</code> <code>ai.onnx.ReduceSum</code></p>
+<p class="why"><b>Ranks here for</b> visualization — attention masks are always drawn as diagrams in papers and never as something you can move. <b>Ceiling</b> — the kernel expects a specific block-sparse layout. The picture is easy; matching the layout is the work.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>4</b></span><span>risk <b>4</b></span><span>standalone <b>4</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p46">4 &middot; The quadratic wall, measured on your own card</h3>
+<p>Attention time against sequence length, plotted live from 128 up to as long as the card allows. The curve bends upward and then the page runs out of memory. Both facts are the point.</p>
+<p class="k"><code>ai.onnx.Attention</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.Softmax</code></p>
+<p class="why"><b>Ranks here for</b> significance — this is the constraint behind the whole long-context research field, and here it is your own measurement. <b>Ceiling</b> — 4 GB of video memory ends the curve early. Say where it ended and why.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 80/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p47">5 &middot; Cache eviction, and what forgetting sounds like</h3>
+<p>Generate text with a full cache. Then drop the oldest half, or drop the least-attended entries, and generate again from the same point. The two continuations diverge in front of you.</p>
+<p class="k"><code>ai.onnx.TensorScatter</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Slice</code> <code>ai.onnx.Attention</code></p>
+<p class="why"><b>Ranks here for</b> surprise — eviction policy is normally invisible, and the failure it causes is very legible. <b>Ceiling</b> — needs the whole generation loop from category 5 first.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>5</b></span><span>risk <b>4</b></span><span>standalone <b>4</b></span><span class="tot">total 69/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p48">6 &middot; Prefill against decode, as two different machines</h3>
+<p>One page, two timings. Processing the prompt saturates the arithmetic units. Producing one token at a time saturates memory bandwidth instead. The chart makes them look like different hardware.</p>
+<p class="k"><code>ai.onnx.Attention</code> <code>ai.onnx.MatMul</code> <code>com.microsoft.MatMulNBits</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> significance — this split explains every serving decision, including why batching helps one phase and not the other. <b>Ceiling</b> — timing variance here is about 10%, so use many repeats.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>3</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 73/100</span></p>
+</div>
+
+<h2 id="c8"><span class="cat">Category 8</span>Mixture of Experts</h2>
+<p>Two kernels, one idea: send each token only to the few sub-networks it needs. The manifest for the float version supports float32 with dense routing; float16, bfloat16 and sparse mixing are not implemented, and quantised weights go through the separate quantised kernel.</p>
+
+<div class="proj">
+<h3 id="p49">1 &middot; Routing map — watch tokens pick their experts</h3>
+<p>You type a sentence. Each word is coloured by the expert that received it. Type a line of code and the colours change completely.</p>
+<p class="k"><code>com.microsoft.MoE</code><span class="tag ms">ms</span> <code>ai.onnx.Softmax</code> <code>ai.onnx.TopK</code> <code>ai.onnx.OneHot</code></p>
+<p class="why"><b>Ranks here for</b> visualization and surprise — routing is the defining property of the largest models in the world and it is almost never shown. <b>Ceiling</b> — needs real expert weights. Without them the colours are noise.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>5</b></span><span>risk <b>4</b></span><span>standalone <b>5</b></span><span class="tot">total 80/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p50">2 &middot; Do experts specialise? Test it yourself</h3>
+<p>Feed four documents: prose, source code, mathematics, another language. Four routing histograms appear. If specialisation is real, the histograms differ visibly.</p>
+<p class="k"><code>com.microsoft.MoE</code><span class="tag ms">ms</span> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.ArgMax</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> significance — this is a genuine open research question, and the page is an experiment rather than a demonstration. <b>Ceiling</b> — the honest result may be that specialisation is weak. Report what you measure.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>5</b></span><span>risk <b>5</b></span><span>standalone <b>5</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p51">3 &middot; Load collapse, live</h3>
+<p>A bar per expert, updating as tokens flow. Turn the balancing term off and watch a few bars grow while the rest starve.</p>
+<p class="k"><code>com.microsoft.MoE</code><span class="tag ms">ms</span> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.ScatterND</code> <code>ai.onnx.Softmax</code></p>
+<p class="why"><b>Ranks here for</b> surprise — the failure mode is dramatic and fast, and it explains an entire branch of training-loss design. <b>Ceiling</b> — you are visualising a routing decision, not training, so the collapse must be set up rather than learned.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>5</b></span><span>risk <b>4</b></span><span>standalone <b>4</b></span><span class="tot">total 67/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p52">4 &middot; How many experts per token is enough</h3>
+<p>A slider for the top-k value. Output quality on one side, arithmetic cost on the other. The curve flattens sooner than most people expect.</p>
+<p class="k"><code>com.microsoft.MoE</code><span class="tag ms">ms</span> <code>ai.onnx.TopK</code> <code>ai.onnx.SwiGLU</code> <code>ai.onnx.MatMul</code></p>
+<p class="why"><b>Ranks here for</b> significance — the choice between one and two experts per token is a real engineering decision with a visible answer. <b>Ceiling</b> — the kernel supports several gate fusion layouts. Pick one and stay with it.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>5</b></span><span>risk <b>4</b></span><span>standalone <b>3</b></span><span class="tot">total 57/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p53">5 &middot; The parameter count that is never used</h3>
+<p>Two numbers, side by side: total parameters and parameters touched by this token. The gap is the entire argument for the architecture.</p>
+<p class="k"><code>com.microsoft.MoE</code><span class="tag ms">ms</span> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.Mul</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — one screen replaces a long explanation of sparse models. <b>Ceiling</b> — a counter, not a computation. Put it inside project 1 rather than alone.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>4</b></span><span>risk <b>3</b></span><span>standalone <b>2</b></span><span class="tot">total 51/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p54">6 &middot; Quantised experts against full-precision experts</h3>
+<p>The same mixture layer, run twice, with the difference and the memory saving both shown.</p>
+<p class="k"><code>com.microsoft.QMoE</code><span class="tag ms">ms</span> <code>com.microsoft.MoE</code><span class="tag ms">ms</span> <code>ai.onnx.Sub</code> <code>ai.onnx.ReduceL2</code></p>
+<p class="why"><b>Ranks here for</b> significance — quantised experts are how a sparse model fits on small hardware. <b>Ceiling</b> — two strict packing conventions at once. This is the hardest single build in the document.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>5</b></span><span>cost <b>5</b></span><span>risk <b>5</b></span><span>standalone <b>3</b></span><span class="tot">total 52/100</span></p>
+</div>
+
+<h2 id="c9"><span class="cat">Category 9</span>Sequences without transformers</h2>
+<p>The collection quietly contains a complete pre-transformer stack, plus the pieces of a state-space model. This corner is under-explored precisely because everyone is looking at attention.</p>
+
+<div class="proj">
+<h3 id="p55">1 &middot; A state-space block, running in a tab</h3>
+<p>Linear attention plus a causal convolution that carries state. Cost grows with sequence length, not with its square. A chart against the attention curve from category 7 makes the difference obvious.</p>
+<p class="k"><code>ai.onnx.LinearAttention</code> <code>ai.onnx.CausalConvWithState</code> <code>com.microsoft.LinearAttentionGate</code><span class="tag ms">ms</span> <code>com.microsoft.GatedAdd</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> surprise — Mamba-style architectures are the main alternative to attention and nobody expects them in a browser. <b>Ceiling</b> — the least documented kernels in the set. Read every card, and expect to spend the time on layout, not on maths.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>5</b></span><span>cost <b>4</b></span><span>risk <b>5</b></span><span>standalone <b>4</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p56">2 &middot; Look inside an LSTM while it reads</h3>
+<p>Feed a character sequence. Three gate values per cell, drawn as bars that move with each character. You can see a forget gate close at the end of a word.</p>
+<p class="k"><code>ai.onnx.LSTM</code> <code>ai.onnx.Sigmoid</code> <code>ai.onnx.Tanh</code></p>
+<p class="why"><b>Ranks here for</b> visualization — the gate picture is the classic diagram, and here it moves with real data. <b>Ceiling</b> — the kernel returns the sequence and the final state. Intermediate gate values may need a hand-wired cell to expose.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 75/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p57">3 &middot; Three recurrent cells on one problem</h3>
+<p>A plain recurrent net, a gated unit and a long short-term memory, all reading the same long sequence. Only two of them still remember the first character at the end.</p>
+<p class="k"><code>ai.onnx.RNN</code> <code>ai.onnx.GRU</code> <code>ai.onnx.LSTM</code> <code>ai.onnx.Tanh</code></p>
+<p class="why"><b>Ranks here for</b> significance — the vanishing memory problem is why gates were invented, and this shows it rather than asserting it. <b>Ceiling</b> — without training this is a demonstration of dynamics, not of accuracy.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p58">4 &middot; Streaming state, proven identical to batch</h3>
+<p>Run a long signal in one pass. Then run it one chunk at a time, carrying the state across chunks. Subtract the two outputs. The difference should be zero.</p>
+<p class="k"><code>ai.onnx.CausalConvWithState</code> <code>com.microsoft.VarlenCausalConvWithState</code><span class="tag ms">ms</span> <code>ai.onnx.Sub</code> <code>ai.onnx.ReduceMax</code></p>
+<p class="why"><b>Ranks here for</b> significance — this equivalence is the whole basis of real-time inference, and proving it is more convincing than reading it. <b>Ceiling</b> — an off-by-one in the state handover shows up as a small non-zero difference. That is the test working.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 65/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p59">5 &middot; Ragged batches without waste</h3>
+<p>Ten sequences of different lengths, packed end to end instead of padded to the longest. A bar chart shows the wasted computation you avoided.</p>
+<p class="k"><code>com.microsoft.VarlenCausalConvWithState</code><span class="tag ms">ms</span> <code>ai.onnx.CumSum</code> <code>ai.onnx.Gather</code> <code>ai.onnx.Compress</code></p>
+<p class="why"><b>Ranks here for</b> significance — padding waste is a large hidden cost in real serving. <b>Ceiling</b> — offset book-keeping is fiddly. The cumulative sum kernel builds the offsets for you.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>4</b></span><span>risk <b>4</b></span><span>standalone <b>3</b></span><span class="tot">total 60/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p60">6 &middot; Reverse a batch of padded sequences correctly</h3>
+<p>Two panels reverse the same padded batch. One uses a plain flip and drags the padding to the front. The other uses the length-aware kernel and does not. The bug is visible.</p>
+<p class="k"><code>ai.onnx.ReverseSequence</code> <code>ai.onnx.Slice</code> <code>ai.onnx.Where</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — this is a real bug that people ship, and one screenshot explains it forever. <b>Ceiling</b> — small. A panel, not a page.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>2</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p61">7 &middot; A loop that lives in the graph</h3>
+<p>The same iteration written twice: once as a JavaScript loop over kernel calls, once as a single graph-level loop operation. Both give the same answer.</p>
+<p class="k"><code>ai.onnx.Loop</code> <code>ai.onnx.Scan</code> <code>ai.onnx.If</code> <code>ai.onnx.Identity</code></p>
+<p class="why"><b>Ranks here for</b> surprise — most people never learn that control flow is itself an operator. <b>Ceiling</b> — these are control-flow operators, so check what the WebGPU package actually implements before designing around them.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>5</b></span><span>standalone <b>2</b></span><span class="tot">total 56/100</span></p>
+</div>
+
+<h2 id="c10"><span class="cat">Category 10</span>Embeddings, retrieval and search</h2>
+<p>This is the category with the most immediate daily use. Transformers.js produces the vectors. The kernels do the search maths, which is the part that gets slow first.</p>
+
+<div class="proj">
+<h3 id="p62">1 &middot; Search your own notes, entirely on your machine <span class="tag hy">hybrid</span></h3>
+<p>Drop a folder of Markdown. The page embeds it once, keeps the vectors on the GPU, and answers a typed question by meaning rather than by keyword. No server, no key, nothing sent anywhere.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.LpNormalization</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Gather</code></p>
+<p class="why"><b>Ranks here for</b> significance — it is the one project here you would keep using after building it. <b>Ceiling</b> — embedding is the slow part and it runs through Transformers.js. Cache the vectors in the browser so the second visit is instant.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>3</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 72/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p63">2 &middot; Embedding atlas — ten thousand documents as a map <span class="tag hy">hybrid</span></h3>
+<p>A scatter plot where related documents sit together. You hover a point and read the text. You lasso a region and read the whole cluster.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceMean</code> <code>ai.onnx.Sub</code> <code>ai.onnx.LpNormalization</code> <code>ai.onnx.TopK</code></p>
+<p class="why"><b>Ranks here for</b> visualization — a good embedding map is the most persuasive object in machine learning. <b>Ceiling</b> — there is no decomposition kernel, so reduce dimensions by power iteration or by random projection. Both are matrix multiplies.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p64">3 &middot; Near-duplicate hunter over a large text set <span class="tag hy">hybrid</span></h3>
+<p>Ten thousand documents in, a list of suspiciously similar pairs out, with the two texts side by side. The full similarity matrix is one large matrix multiply.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Greater</code> <code>ai.onnx.NonZero</code> <code>ai.onnx.Trilu</code> <code>ai.onnx.TopK</code></p>
+<p class="why"><b>Ranks here for</b> significance — training-set contamination and duplicate content are real problems and this is a real tool. <b>Ceiling</b> — a 10,000-square matrix is 100 million values. Process it in blocks and keep each block on the GPU.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p65">4 &middot; A retrieval-augmented answer, fully local <span class="tag hy">hybrid</span></h3>
+<p>Ask a question. The page retrieves passages with kernels and writes the answer with a small local model. The retrieved passages stay on screen next to the answer.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.TopK</code> <code>ai.onnx.LpNormalization</code> <code>ai.onnx.Softmax</code></p>
+<p class="why"><b>Ranks here for</b> significance — the entire private-assistant pattern, with nothing leaving the laptop. <b>Ceiling</b> — 4 GB of video memory caps the generator. Keep it near 500M parameters and expect modest writing.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>4</b></span><span>risk <b>4</b></span><span>standalone <b>5</b></span><span class="tot">total 64/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p66">5 &middot; Compress the vectors and measure what you lost</h3>
+<p>The same search, run against full vectors and against quantised ones. Two result lists, a recall number, and a memory number.</p>
+<p class="k"><code>ai.onnx.QuantizeLinear</code> <code>ai.onnx.MatMulInteger</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Equal</code> <code>ai.onnx.ReduceSum</code></p>
+<p class="why"><b>Ranks here for</b> significance — every vector database makes this trade and hides the number. Here it is measured. <b>Ceiling</b> — proper product quantisation needs clustering first, which is category 11.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 68/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p67">6 &middot; Five languages, one meaning <span class="tag hy">hybrid</span></h3>
+<p>The same sentence in five languages, embedded by a multilingual model, plotted together. The five points sit almost on top of each other. An unrelated sentence sits far away.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.LpNormalization</code> <code>ai.onnx.Sub</code> <code>ai.onnx.ReduceL2</code></p>
+<p class="why"><b>Ranks here for</b> surprise — cross-language alignment is a strange and beautiful property, and one picture carries it. <b>Ceiling</b> — small page, and it depends entirely on the model you pick.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>2</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 72/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p68">7 &middot; Re-rank the shortlist and watch the order change <span class="tag hy">hybrid</span></h3>
+<p>Twenty results from a fast search, re-scored by a slower and more careful model. Arrows show which results moved and how far.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Softmax</code> <code>ai.onnx.Gather</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — two-stage retrieval is standard practice and the movement arrows explain it instantly. <b>Ceiling</b> — the second model does the work. The kernels only order the list.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 64/100</span></p>
+</div>
+
+<h2 id="c11"><span class="cat">Category 11</span>Classical machine learning and statistics</h2>
+<p>No neural network needed. These are the methods that were fast on a CPU and become immediate on a GPU, and every one of them is a page you can put a large dataset into.</p>
+
+<div class="proj">
+<h3 id="p69">1 &middot; k-means on a million points, converging in front of you</h3>
+<p>A million points on screen. Centres jump, colours flip, and the whole picture settles after a few seconds. You drag a centre and watch the clustering recover.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceSumSquare</code> <code>ai.onnx.ArgMin</code> <code>ai.onnx.OneHot</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> visualization — convergence is a process, and almost every explanation of it is a still image. <b>Ceiling</b> — the assignment step is a distance matrix, so memory grows with points multiplied by clusters. Block it.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p70">2 &middot; Principal components without a decomposition kernel</h3>
+<p>Drop a spreadsheet. The page centres the data, then finds the leading directions by repeated multiplication, and plots the first two. A counter shows the iterations to convergence.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceMean</code> <code>ai.onnx.Sub</code> <code>ai.onnx.LpNormalization</code> <code>ai.onnx.Gemm</code></p>
+<p class="why"><b>Ranks here for</b> surprise — there is no <code>SVD</code> in the 207, so the standard route is closed and power iteration works anyway. <b>Ceiling</b> — close eigenvalues converge slowly. Show the iteration count so the slowness is visible rather than mysterious.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 87/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p71">3 &middot; Correlation heat map for any dropped spreadsheet</h3>
+<p>Drop a CSV with a thousand columns. A full correlation matrix appears at once, sorted so that related columns sit together.</p>
+<p class="k"><code>ai.onnx.ReduceMean</code> <code>ai.onnx.Sub</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.Sqrt</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> significance — this is a genuinely useful data tool that normally needs a Python environment. <b>Ceiling</b> — sorting the rows and columns is a JavaScript step, because there is no sort kernel.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>3</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 72/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p72">4 &middot; Soft clustering with expectation and maximisation</h3>
+<p>The same points as project 1, but each one is partly in several clusters. Colours blend at the boundaries, and ellipses show the fitted shapes.</p>
+<p class="k"><code>ai.onnx.Exp</code> <code>ai.onnx.Softmax</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.Log</code></p>
+<p class="why"><b>Ranks here for</b> visualization — blended membership is the clearest possible picture of the difference between hard and soft assignment. <b>Ceiling</b> — full covariance needs a matrix inverse, which does not exist here. Use diagonal covariance.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p73">5 &middot; Nearest neighbours you can draw into</h3>
+<p>Click to place labelled points. The decision surface redraws immediately for every pixel of the canvas. Change the neighbour count and watch the boundary get smoother.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Gather</code> <code>ai.onnx.OneHot</code> <code>ai.onnx.ArgMax</code></p>
+<p class="why"><b>Ranks here for</b> visualization — classifying every pixel is expensive on a CPU and free here, which is what makes the interaction feel instant. <b>Ceiling</b> — none. This is a clean small build.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p74">6 &middot; Density estimation as a landscape</h3>
+<p>Scattered points become a smooth surface. A bandwidth slider takes it from spiky to featureless, and the honest answer sits in between.</p>
+<p class="k"><code>ai.onnx.Sub</code> <code>ai.onnx.Exp</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.Conv</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — bandwidth choice is the entire subject and the slider teaches it in five seconds. <b>Ceiling</b> — a Gaussian smoothing convolution is far cheaper than all-pairs distances. Use the convolution route for large sets.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>3</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p75">7 &middot; Monte Carlo estimation, with the awkward part named</h3>
+<p>Estimate an integral, or an option price, from millions of samples. A running estimate narrows toward the true value as the sample count grows.</p>
+<p class="k"><code>ai.onnx.CumSum</code> <code>ai.onnx.CumProd</code> <code>ai.onnx.Exp</code> <code>ai.onnx.ReduceMean</code> <code>ai.onnx.Max</code></p>
+<p class="why"><b>Ranks here for</b> significance — path simulation is exactly what wide parallel hardware is for. <b>Ceiling</b> — the missing random number generator hurts most here. Generate the sample block in JavaScript, upload it once, and re-use it with different offsets.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<h2 id="c12"><span class="cat">Category 12</span>Training in the browser</h2>
+<p>Nobody expects a kernel library without automatic differentiation to train anything. Write the gradients by hand and it trains. A backward pass for a small network is five or six more kernel calls, and the whole loop stays on the GPU.</p>
+
+<div class="proj">
+<h3 id="p76">1 &middot; Train a digit classifier in the tab, then draw a digit</h3>
+<p>Drop the training set. A loss curve falls. When it flattens, you draw a number with the mouse and the page reads it. Nothing was pre-trained and nothing was downloaded.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Transpose</code> <code>ai.onnx.Softmax</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Mul</code> <code>ai.onnx.ReduceMean</code></p>
+<p class="why"><b>Ranks here for</b> all three axes — training is the last thing anyone expects from this library, the result is interactive, and the gradient of softmax with cross-entropy is a subtraction. <b>Ceiling</b> — a linear classifier reaches about 92% and a small hidden layer does better. Shuffling happens in JavaScript.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 88/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p77">2 &middot; Two moons, one hidden layer, gradients by hand</h3>
+<p>Two interleaved crescents that no straight line can separate. The decision surface bends across the canvas as training runs, and finally wraps around both shapes.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Transpose</code> <code>ai.onnx.Relu</code> <code>ai.onnx.Sigmoid</code> <code>ai.onnx.Greater</code> <code>ai.onnx.Where</code></p>
+<p class="why"><b>Ranks here for</b> visualization — the moving boundary is the single best picture of what learning is. <b>Ceiling</b> — the gradient of the rectifier is a comparison and a select, so the backward pass costs two more calls than people expect.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 88/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p78">3 &middot; The loss landscape, as a surface you can fly over</h3>
+<p>Pick two directions in parameter space. Evaluate the loss on a grid across them. A valley appears, and the path taken by training is drawn on top of it.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceMean</code> <code>ai.onnx.Log</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code></p>
+<p class="why"><b>Ranks here for</b> surprise — this is a famous set of pictures from a research paper, and the only reason it is rare is that it costs thousands of forward passes. On a GPU that is a grid evaluation. <b>Ceiling</b> — the surface is a two-dimensional slice of a very high-dimensional space. Say so on the page.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>3</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p79">4 &middot; Teach a real model a new class in thirty seconds <span class="tag hy">hybrid</span></h3>
+<p>Give five examples of two new categories. The page embeds them with a real model and trains only a final linear layer. It then classifies anything you drop.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Transpose</code> <code>ai.onnx.Softmax</code> <code>ai.onnx.Sub</code> <code>ai.onnx.LpNormalization</code></p>
+<p class="why"><b>Ranks here for</b> significance — a linear probe on frozen features is how most practical custom classifiers are actually built. <b>Ceiling</b> — only the last layer trains. The frozen model decides the accuracy ceiling.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>4</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 67/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p80">5 &middot; Optimiser race on one chart</h3>
+<p>Plain descent, descent with momentum, and an adaptive method, all written by hand, all training the same network. Three loss curves race. One of them oscillates and you can see why.</p>
+<p class="k"><code>ai.onnx.Mul</code> <code>ai.onnx.Add</code> <code>ai.onnx.Sqrt</code> <code>ai.onnx.Div</code> <code>ai.onnx.Pow</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — optimisers are usually a string in a config file, and here they are five lines of arithmetic each. <b>Ceiling</b> — keep the optimiser state on the GPU or the update becomes the slowest part of the loop.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>3</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 73/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p81">6 &middot; Poison the training set with a click</h3>
+<p>A working classifier. You add one badly labelled point and press train. The boundary lurches. You add ten and it collapses.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Sigmoid</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Mul</code> <code>ai.onnx.ReduceMean</code></p>
+<p class="why"><b>Ranks here for</b> significance — data quality beats model choice, and this makes that lesson physical. <b>Ceiling</b> — logistic regression is fragile by design here. That is the point, not a flaw.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 89/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p82">7 &middot; Watch a model start to memorise</h3>
+<p>Two curves from the same run. Training loss keeps falling. Held-out loss turns upward. The page marks the exact step where they part.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceMean</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Relu</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — overfitting is defined by that crossing point and most people have only read about it. <b>Ceiling</b> — you must hold out data honestly. Split before training, not after.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<h2 id="c13"><span class="cat">Category 13</span>Iterative linear algebra and graphs</h2>
+<p>There is no matrix inverse in the 207, and no decomposition either. That absence defines this whole category. Every method here reaches its answer by repeating a matrix multiply, which happens to be the operation the GPU does best.</p>
+
+<div class="proj">
+<h3 id="p83">1 &middot; PageRank, flowing across a real graph</h3>
+<p>Load a link graph. Every node starts equal. Rank flows along the edges, iteration by iteration, and the node sizes change on screen until the picture stops moving.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.LpNormalization</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code> <code>ai.onnx.ReduceSum</code></p>
+<p class="why"><b>Ranks here for</b> visualization and significance — the algorithm that built a search company is repeated multiplication, and watching it settle makes that concrete. <b>Ceiling</b> — a dense matrix limits you to a few thousand nodes. A sparse graph needs gather-based multiplication instead.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p84">2 &middot; Solve a linear system with no solver</h3>
+<p>Set up a system, press run, and watch the residual fall on a log chart. Conjugate gradient reaches the answer in a few dozen steps using only multiplications and dot products.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> surprise — the obvious route is closed, and the professional route was iterative all along. Direct inversion is rare in real numerical work. <b>Ceiling</b> — the method needs a symmetric positive-definite matrix. For anything else, use the least-squares form.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p85">3 &middot; Split a network in two along its natural seam</h3>
+<p>A graph with no obvious structure. The page computes the second-smallest eigenvector of its Laplacian by iteration, colours the nodes by sign, and the two communities separate cleanly.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Sub</code> <code>ai.onnx.LpNormalization</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.Sign</code></p>
+<p class="why"><b>Ranks here for</b> surprise — spectral clustering feels like magic the first time a graph falls apart along the right line. <b>Ceiling</b> — you must remove the constant vector at every step or the iteration converges to the wrong thing.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p86">4 &middot; Influence spreading through a network</h3>
+<p>Click a node. Heat spreads outward along the edges over time, and the page shows who is genuinely close rather than who is one hop away.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Exp</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Add</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> visualization — graph distance and graph influence are different things, and this shows the difference moving. <b>Ceiling</b> — the matrix exponential is approximated by scaling and squaring, which is a short series of multiplications.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 68/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p87">5 &middot; Where does a Markov chain settle</h3>
+<p>Build a transition table by clicking. The distribution marches to its steady state and stops. Change one probability and watch the whole equilibrium move.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Div</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.CumProd</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — steady state is an abstract term until you see the numbers stop changing. <b>Ceiling</b> — a chain that is not connected has several steady states. Let the user build one and find out.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>3</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p88">6 &middot; Why some systems are hard</h3>
+<p>Two systems that look alike. One converges in twelve steps. The other needs eight hundred. The page draws both error curves and the two matrices next to them.</p>
+<p class="k"><code>ai.onnx.EyeLike</code> <code>ai.onnx.Trilu</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.ReduceL2</code> <code>ai.onnx.Div</code></p>
+<p class="why"><b>Ranks here for</b> significance — conditioning is the reason numerical code fails, and it is usually taught with no picture at all. <b>Ceiling</b> — you cannot compute the condition number exactly without a decomposition. Estimate it from the iteration count.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<h2 id="c14"><span class="cat">Category 14</span>General GPU primitives and data work</h2>
+<p>This category has nothing to do with machine learning. The scan, scatter, gather, compress and unique kernels are the classic parallel primitives, and here they arrive with no shader to write and no CUDA to install.</p>
+
+<div class="proj">
+<h3 id="p89">1 &middot; A data table on the GPU: filter, group and join a million rows</h3>
+<p>Drop a CSV. Filter it with a condition, group it by a column, join it against a second table, and see the timings for each step. No database and no server.</p>
+<p class="k"><code>ai.onnx.Greater</code> <code>ai.onnx.Compress</code> <code>ai.onnx.NonZero</code> <code>ai.onnx.Unique</code> <code>ai.onnx.ScatterND</code> <code>ai.onnx.GatherND</code> <code>ai.onnx.CumSum</code></p>
+<p class="why"><b>Ranks here for</b> surprise and significance — a kernel library published for machine learning turns out to contain a small query engine. <b>Ceiling</b> — no sort kernel, so ordered output falls back to JavaScript. Grouping works because the unique kernel exists.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>5</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p90">2 &middot; Take a floating point number apart</h3>
+<p>Type a number. See its sign bit, its exponent and its fraction, live. Then watch what the bits look like at the moment a computation produces infinity or a non-number.</p>
+<p class="k"><code>ai.onnx.BitCast</code> <code>ai.onnx.BitShift</code> <code>ai.onnx.BitwiseAnd</code> <code>ai.onnx.IsNaN</code> <code>ai.onnx.IsInf</code></p>
+<p class="why"><b>Ranks here for</b> surprise — <code>BitCast</code> lets you look at a float as an integer, which is the trick behind a generation of fast approximate maths. <b>Ceiling</b> — a small page, but the one that removes the most confusion per line of code.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>3</b></span><span>cost <b>1</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 85/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p91">3 &middot; The scan, and everything it builds</h3>
+<p>One prefix sum drives four demonstrations on the same page: stream compaction, run-length encoding, a histogram, and allocating variable-sized output.</p>
+<p class="k"><code>ai.onnx.CumSum</code> <code>ai.onnx.Where</code> <code>ai.onnx.ScatterND</code> <code>ai.onnx.Equal</code> <code>ai.onnx.Range</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — the prefix sum is the most important parallel primitive and the least intuitive, and four uses on one page settle it. <b>Ceiling</b> — none. The kernel already handles exclusive and reversed scans.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 84/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p92">4 &middot; Sparse matrix multiplication with no sparse kernel</h3>
+<p>A sparse matrix stored as indices and values, multiplied by a dense vector using gather and scatter, timed against the dense version of the same matrix.</p>
+<p class="k"><code>ai.onnx.GatherElements</code> <code>ai.onnx.ScatterElements</code> <code>ai.onnx.Mul</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.CumSum</code></p>
+<p class="why"><b>Ranks here for</b> significance — it unlocks the large graphs that category 13 cannot reach with dense matrices. <b>Ceiling</b> — scatter with repeated indices has an ordering issue. Use segmented reduction over sorted indices instead.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>4</b></span><span>standalone <b>4</b></span><span class="tot">total 61/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p93">5 &middot; Deduplicate and compare large sets</h3>
+<p>Two lists of a million values. Unique values, shared values, and values in one list only, all computed on the card and reported with counts.</p>
+<p class="k"><code>ai.onnx.Unique</code> <code>ai.onnx.Equal</code> <code>ai.onnx.ReduceMax</code> <code>ai.onnx.Compress</code> <code>ai.onnx.NonZero</code></p>
+<p class="why"><b>Ranks here for</b> significance — set operations at this size are slow in JavaScript and immediate here. <b>Ceiling</b> — membership testing against a large set is an all-pairs comparison unless you block it.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>3</b></span><span>surprise <b>2</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 60/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p94">6 &middot; Bit-trick sandbox</h3>
+<p>Hashing, bit masks, cyclic shifts and ordered dithering of a dropped image, all done with integer operations and no arithmetic on floats.</p>
+<p class="k"><code>ai.onnx.BitwiseXor</code> <code>ai.onnx.BitwiseAnd</code> <code>ai.onnx.BitwiseOr</code> <code>ai.onnx.BitwiseNot</code> <code>ai.onnx.BitShift</code> <code>ai.onnx.Mod</code></p>
+<p class="why"><b>Ranks here for</b> surprise — a set of kernels published for neural networks includes a complete integer toolkit. It is also a way to make repeatable pseudo-random values without a generator kernel. <b>Ceiling</b> — a hash written this way is for dithering and bucketing, not for security.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>3</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 73/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p95">7 &middot; Reorder a million rows without a sort</h3>
+<p>Shuffle, partition and permute large arrays using index arithmetic alone, with a chart of how long each pattern takes.</p>
+<p class="k"><code>ai.onnx.Range</code> <code>ai.onnx.Gather</code> <code>ai.onnx.Mod</code> <code>ai.onnx.Where</code> <code>ai.onnx.ConstantOfShape</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — it makes the missing sort kernel concrete, and shows what you can still do without it. <b>Ceiling</b> — the permutation itself comes from JavaScript, for the same reason as everywhere else.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 68/100</span></p>
+</div>
+
+<h2 id="c15"><span class="cat">Category 15</span>Vision heads, wired by hand</h2>
+<p>A detector is a backbone plus a head. Transformers.js can run the backbone. The head is exactly the set of odd kernels in this collection that nothing else uses. Every project takes a dropped image.</p>
+
+<div class="proj">
+<h3 id="p96">1 &middot; Build the detection head yourself <span class="tag hy">hybrid</span></h3>
+<p>A model produces raw boxes and scores. Your page decodes them, filters them, suppresses the overlapping ones, and draws the survivors. You wrote the part that turns a tensor into a picture with boxes on it.</p>
+<p class="k"><code>ai.onnx.NonMaxSuppression</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Greater</code> <code>ai.onnx.Gather</code> <code>ai.onnx.Concat</code></p>
+<p class="why"><b>Ranks here for</b> significance — the head is the part everyone imports and nobody reads, and it is four kernels. <b>Ceiling</b> — box coordinate conventions differ between models. Getting the format right is most of the work.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>4</b></span><span>cost <b>4</b></span><span>risk <b>4</b></span><span>standalone <b>5</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p97">2 &middot; Overlap suppression, with a slider</h3>
+<p>Five hundred overlapping boxes on one photograph. Drag the overlap threshold and watch boxes merge into one, then split apart again. A counter shows how many survive.</p>
+<p class="k"><code>ai.onnx.NonMaxSuppression</code> <code>ai.onnx.TopK</code> <code>ai.onnx.Where</code> <code>ai.onnx.ReduceMax</code></p>
+<p class="why"><b>Ranks here for</b> visualization — a threshold that people copy from a config file becomes something they can feel. <b>Ceiling</b> — none. This is a clean small build and a good first use of the kernel.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>2</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 79/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p98">3 &middot; Deformable sampling, drawn on the image</h3>
+<p>A convolution whose sampling points move. The page draws the sampling grid on top of the picture, and you drag the offsets and watch the grid wrap around an object instead of sitting square.</p>
+<p class="k"><code>ai.onnx.DeformConv</code> <code>ai.onnx.Conv</code> <code>ai.onnx.GridSample</code> <code>ai.onnx.Sub</code></p>
+<p class="why"><b>Ranks here for</b> surprise — deformable convolution is one of the least-visualised ideas in computer vision and one of the more beautiful. <b>Ceiling</b> — real offsets are learned. Hand-set offsets show the mechanism, not the accuracy.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p99">4 &middot; Why aligned pooling replaced rounded pooling</h3>
+<p>One region of interest, two croppings. The old method rounds the box to whole pixels. The aligned method samples between them. The page shows both grids and the half-pixel shift between the results.</p>
+<p class="k"><code>ai.onnx.RoiAlign</code> <code>ai.onnx.MaxPool</code> <code>ai.onnx.Resize</code> <code>ai.onnx.Sub</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — a half-pixel error sounds trivial and destroyed segmentation accuracy for years. <b>Ceiling</b> — the effect is subtle. Zoom in hard or the picture proves nothing.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 67/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p100">5 &middot; Clean up a rough segmentation mask <span class="tag hy">hybrid</span></h3>
+<p>A blocky mask from a model, refined against the image edges. Holes close, edges snap to the object, and a slider controls how far the refinement goes.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Resize</code> <code>ai.onnx.Where</code> <code>ai.onnx.Greater</code> <code>ai.onnx.MaxPool</code></p>
+<p class="why"><b>Ranks here for</b> visualization — mask refinement is a large visible improvement from very little arithmetic. <b>Ceiling</b> — this is guided smoothing, not a trained refinement network. Do not claim more.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>2</b></span><span>kernel <b>3</b></span><span>cost <b>4</b></span><span>risk <b>3</b></span><span>standalone <b>4</b></span><span class="tot">total 65/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p101">6 &middot; Anchor boxes, all of them, at once</h3>
+<p>Every anchor a detector considers, drawn over the picture. Thousands of faint rectangles at several scales. It explains the design of a detector faster than any diagram.</p>
+<p class="k"><code>ai.onnx.Range</code> <code>ai.onnx.Tile</code> <code>ai.onnx.Concat</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Add</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — seeing the sheer number of candidate boxes explains why suppression exists. <b>Ceiling</b> — pure geometry. No model needed, which is also its charm.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>3</b></span><span class="tot">total 79/100</span></p>
+</div>
+
+<h2 id="c16"><span class="cat">Category 16</span>Teaching and numerical toys</h2>
+<p>Small pages that answer one question completely. Together they are the reference material this library does not yet ship.</p>
+
+<div class="proj">
+<h3 id="p102">1 &middot; The activation zoo, all twenty of them</h3>
+<p>Every activation function in the collection, on one plot, with its derivative below it. Toggle any of them. The dead region of the rectifier, the smooth tail of the error-function variant, and the negative dip of the self-gated ones all appear together.</p>
+<p class="k"><code>ai.onnx.Relu</code> <code>ai.onnx.LeakyRelu</code> <code>ai.onnx.PRelu</code> <code>ai.onnx.Elu</code> <code>ai.onnx.Celu</code> <code>ai.onnx.Selu</code> <code>ai.onnx.Gelu</code> <code>ai.onnx.Mish</code> <code>ai.onnx.Swish</code> <code>ai.onnx.HardSwish</code> <code>ai.onnx.HardSigmoid</code> <code>ai.onnx.Softplus</code> <code>ai.onnx.Softsign</code> <code>ai.onnx.Shrink</code> <code>ai.onnx.ThresholdedRelu</code> <code>ai.onnx.Erf</code> <code>ai.onnx.Sigmoid</code> <code>ai.onnx.Tanh</code> <code>com.microsoft.FastGelu</code><span class="tag ms">ms</span> <code>com.microsoft.QuickGelu</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> significance — twenty kernels in one page, and a reference you would keep open while reading papers. <b>Ceiling</b> — none. It is the highest coverage per line of code in this document.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>2</b></span><span>kernel <b>5</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>5</b></span><span class="tot">total 84/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p103">2 &middot; Einstein summation playground</h3>
+<p>Type a subscript string into a box. The page runs it on the GPU and shows the result, the shapes and the time. Matrix multiply, trace, transpose, outer product and batched attention are all preset buttons.</p>
+<p class="k"><code>ai.onnx.Einsum</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.Transpose</code></p>
+<p class="why"><b>Ranks here for</b> surprise — it is a GPU tensor calculator with no installation, and it is the smallest useful thing on this whole list. <b>Ceiling</b> — the manifest supports full equation strings including implicit output terms. Malformed strings need a clear error message.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>3</b></span><span>cost <b>1</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 80/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p104">3 &middot; Why the stable form of softmax exists</h3>
+<p>Two panels compute the same thing. One subtracts the maximum first. As you raise the input values, the naive panel turns into non-numbers and the stable one does not. Indicator lights show which values broke.</p>
+<p class="k"><code>ai.onnx.Exp</code> <code>ai.onnx.ReduceLogSumExp</code> <code>ai.onnx.ReduceMax</code> <code>ai.onnx.IsNaN</code> <code>ai.onnx.IsInf</code> <code>ai.onnx.Softmax</code></p>
+<p class="why"><b>Ranks here for</b> significance — this trick is in every framework and few people have seen the failure it prevents. <b>Ceiling</b> — a single-screen page with one very clear message.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 85/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p105">4 &middot; Half precision, and where it breaks</h3>
+<p>The same computation in 32-bit and 16-bit floats, with the growing difference plotted as the numbers get larger or smaller. Your Chrome reports half-precision support as available, so both run.</p>
+<p class="k"><code>ai.onnx.Cast</code> <code>ai.onnx.CastLike</code> <code>ai.onnx.Sub</code> <code>ai.onnx.Abs</code> <code>ai.onnx.ReduceMax</code> <code>ai.onnx.IsInf</code></p>
+<p class="why"><b>Ranks here for</b> significance — half precision is the default in modern inference and its limits are usually invisible until something breaks. <b>Ceiling</b> — a kernel may not implement every type. Check each manifest before assuming.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 69/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p106">5 &middot; The complete reduction gallery</h3>
+<p>One tensor, eleven reductions, one screen. Sum, mean, maximum, minimum, product, both norms, sum of squares, and the logarithmic variants, each with its axis and its result.</p>
+<p class="k"><code>ai.onnx.ReduceSum</code> <code>ai.onnx.ReduceMean</code> <code>ai.onnx.ReduceMax</code> <code>ai.onnx.ReduceMin</code> <code>ai.onnx.ReduceProd</code> <code>ai.onnx.ReduceL1</code> <code>ai.onnx.ReduceL2</code> <code>ai.onnx.ReduceSumSquare</code> <code>ai.onnx.ReduceLogSum</code> <code>ai.onnx.ReduceLogSumExp</code> <code>ai.onnx.ArgMax</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — axis and keep-dimension arguments confuse everyone, and eleven live examples end the confusion. <b>Ceiling</b> — a reference card, not a discovery.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>1</b></span><span>kernel <b>4</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 73/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p107">6 &middot; Broadcasting, drawn as blocks</h3>
+<p>Two shapes you can edit. The page draws how they line up, colours the dimensions that stretch, and refuses the combinations that are illegal.</p>
+<p class="k"><code>ai.onnx.Expand</code> <code>ai.onnx.Tile</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Shape</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — broadcasting errors are the most common failure in tensor code. <b>Ceiling</b> — remember that some kernels refuse to broadcast at all. The gated activation is one of them.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>2</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 81/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p108">7 &middot; Does the GPU agree with JavaScript</h3>
+<p>Trigonometric, hyperbolic and error functions computed both ways across a wide range, with the difference plotted. Mostly a flat line, with interesting bumps at the extremes.</p>
+<p class="k"><code>ai.onnx.Sin</code> <code>ai.onnx.Cos</code> <code>ai.onnx.Tan</code> <code>ai.onnx.Sinh</code> <code>ai.onnx.Cosh</code> <code>ai.onnx.Asin</code> <code>ai.onnx.Acos</code> <code>ai.onnx.Atan</code> <code>ai.onnx.Asinh</code> <code>ai.onnx.Acosh</code> <code>ai.onnx.Atanh</code> <code>ai.onnx.Erf</code></p>
+<p class="why"><b>Ranks here for</b> surprise — twelve kernels tested at once, and the answer is not always identical. <b>Ceiling</b> — small differences are expected and correct. Report them as differences, not as bugs.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>3</b></span><span>surprise <b>4</b></span><span>kernel <b>4</b></span><span>cost <b>1</b></span><span>risk <b>2</b></span><span>standalone <b>3</b></span><span class="tot">total 72/100</span></p>
+</div>
+
+<h2 id="c17"><span class="cat">Category 17</span>Hardware forensics</h2>
+<p>These projects measure your own machine. They are the most useful thing to build first, because every number in every other project depends on what they find.</p>
+
+<div class="proj">
+<h3 id="p109">1 &middot; Two graphics cards, one page</h3>
+<p>Run the same workload on the Intel chip and on the discrete card, and put the two results side by side with the adapter names. The page also shows the exact Windows setting that chooses the card, because the browser preference alone does not.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Conv</code> <code>ai.onnx.Softmax</code></p>
+<p class="why"><b>Ranks here for</b> significance — you already proved that a browser preference cannot switch cards on this laptop, and that finding is worth publishing as a page. <b>Ceiling</b> — Chrome binds one adapter when its process starts. You must quit Chrome completely between the two runs, so the page compares saved results.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>2</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>5</b></span><span class="tot">total 77/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p110">2 &middot; Which shader variant did it choose, and why</h3>
+<p>The matrix multiply kernel ships fourteen shader templates. The page runs a range of shapes, reports the variant chosen for each one, and shows which conditions in the manifest decided it.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>com.microsoft.FusedMatMul</code><span class="tag ms">ms</span> <code>ai.onnx.Gemm</code> <code>com.microsoft.FusedGemm</code><span class="tag ms">ms</span></p>
+<p class="why"><b>Ranks here for</b> surprise — dispatch selection is invisible in every other GPU stack, and here it is data you can read. On this laptop the matrix-unit variant is never chosen, because Chrome reports that feature as absent on both adapters. <b>Ceiling</b> — you are reading a manifest and inferring. Say that plainly.</p>
+<p class="sc"><span>visual <b>3</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>3</b></span><span>risk <b>4</b></span><span>standalone <b>4</b></span><span class="tot">total 71/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p111">3 &middot; The cost of coming back to JavaScript</h3>
+<p>The same operation at eight sizes, run twice: once returning to JavaScript, once staying on the card. Two curves, and the gap between them is the whole lesson.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Add</code> <code>ai.onnx.Mul</code></p>
+<p class="why"><b>Ranks here for</b> significance — you already measured 26 ms against 9.3 ms at 1024 squared on this card. A curve turns one measurement into a rule. <b>Ceiling</b> — run-to-run variance is about 10%. Repeat every point and show the spread.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>4</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>5</b></span><span class="tot">total 89/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p112">4 &middot; Find the corner of your card's performance</h3>
+<p>Plot achieved throughput against the arithmetic done per byte moved. Small operations sit on the bandwidth slope. Large matrix multiplies sit on the flat arithmetic ceiling. The bend is your machine's balance point.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Add</code> <code>ai.onnx.Gemm</code> <code>ai.onnx.ReduceSum</code></p>
+<p class="why"><b>Ranks here for</b> significance — one chart predicts whether any future kernel chain will be fast, which no single benchmark can. <b>Ceiling</b> — the roofline needs the card's peak numbers as a reference line. Measure them, do not quote a specification sheet.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>5</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p113">5 &middot; Watch the laptop get slower as it warms</h3>
+<p>Run the same workload every second for ten minutes. Plot the result. On a laptop the line usually starts flat and then steps down, and it does not come back until the fans catch up.</p>
+<p class="k"><code>ai.onnx.MatMul</code> <code>ai.onnx.Conv</code></p>
+<p class="why"><b>Ranks here for</b> surprise — every benchmark you will ever read was measured in the first thirty seconds, and this shows what happens after. <b>Ceiling</b> — the browser cannot read temperature. You are inferring heat from throughput, so label the chart honestly.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 80/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p114">6 &middot; Full census of what your adapters support</h3>
+<p>Every feature and every limit of both adapters, side by side, with the values that matter for these kernels marked. A copy button produces a report you can paste into an issue.</p>
+<p class="k"><code>ai.onnx.Identity</code> <code>ai.onnx.Cast</code></p>
+<p class="why"><b>Ranks here for</b> teaching value — it is the page you open first whenever anything behaves differently on another machine. <b>Ceiling</b> — mostly browser interrogation rather than kernel work. Useful anyway.</p>
+<p class="sc"><span>visual <b>2</b></span><span>explain <b>3</b></span><span>surprise <b>2</b></span><span>kernel <b>1</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>4</b></span><span class="tot">total 64/100</span></p>
+</div>
+
+<h2 id="c18"><span class="cat">Category 18</span>Games and interactive toys</h2>
+<p>A cellular automaton is a convolution. That single fact turns this whole category into one-file projects with millions of cells.</p>
+
+<div class="proj">
+<h3 id="p115">1 &middot; Slime mould — a million agents that build networks</h3>
+<p>Particles move, leave a trail, and steer toward trails ahead of them. Within seconds they organise into veins and webs that look like a living organism. It is the best-looking thing you can build from these kernels.</p>
+<p class="k"><code>ai.onnx.GridSample</code> <code>ai.onnx.Conv</code> <code>ai.onnx.ScatterND</code> <code>ai.onnx.Sin</code> <code>ai.onnx.Cos</code> <code>ai.onnx.Mul</code></p>
+<p class="why"><b>Ranks here for</b> visualization and surprise — sensing ahead of each agent is a sampling call, and trail decay is a blur. Two kernels produce emergent behaviour. <b>Ceiling</b> — turning decisions need a random component, which comes from a pre-uploaded noise buffer.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>5</b></span><span>kernel <b>4</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 85/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p116">2 &middot; Falling sand</h3>
+<p>Sand, water, oil and fire in a box. You draw with the mouse. Sand piles, water levels itself, fire climbs. Every cell updates at once.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Where</code> <code>ai.onnx.Equal</code> <code>ai.onnx.Greater</code> <code>ai.onnx.Max</code></p>
+<p class="why"><b>Ranks here for</b> visualization — it is the most playable thing here, and the rules are pure neighbour comparison. <b>Ceiling</b> — a parallel update can move the same grain twice. Use a checkerboard update order, which is the standard fix.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>2</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>5</b></span><span class="tot">total 75/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p117">3 &middot; Life, at sixteen million cells</h3>
+<p>A four-thousand square grid of Conway's rules, running at full frame rate, with zoom and pan. Gliders cross the whole screen in a few seconds.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.Equal</code> <code>ai.onnx.Or</code> <code>ai.onnx.And</code> <code>ai.onnx.Where</code></p>
+<p class="why"><b>Ranks here for</b> visualization — the neighbour count is a 3&times;3 convolution and the rule is two comparisons. Scale is what makes it new. <b>Ceiling</b> — none worth naming. This is the cheapest impressive build in the document.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>3</b></span><span>kernel <b>2</b></span><span>cost <b>1</b></span><span>risk <b>1</b></span><span>standalone <b>5</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p118">4 &middot; Flocking, ten thousand birds</h3>
+<p>Separation, alignment and cohesion over ten thousand agents. Flocks split around obstacles you place and rejoin behind them.</p>
+<p class="k"><code>ai.onnx.Sub</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.Less</code> <code>ai.onnx.Where</code> <code>ai.onnx.ReduceSum</code> <code>ai.onnx.LpNormalization</code></p>
+<p class="why"><b>Ranks here for</b> visualization — flocking is normally limited by the neighbour search, and all-pairs distance is a matrix multiply here. <b>Ceiling</b> — all-pairs grows with the square of the count. Ten thousand agents is a hundred million pairs, which is near the limit for a smooth frame rate.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p119">5 &middot; Watch a maze get solved by a spreading wave</h3>
+<p>A flood front expands from the start, follows every corridor at once, and reaches the exit. The shortest path is then traced backward down the arrival times.</p>
+<p class="k"><code>ai.onnx.Conv</code> <code>ai.onnx.MaxPool</code> <code>ai.onnx.Where</code> <code>ai.onnx.Min</code> <code>ai.onnx.Add</code></p>
+<p class="why"><b>Ranks here for</b> surprise — a breadth-first search is a queue on a processor and a repeated dilation on a GPU, and the second version is far prettier. <b>Ceiling</b> — the number of iterations equals the path length, so a big maze is many small dispatches.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>4</b></span><span>surprise <b>4</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 83/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p120">6 &middot; Ant colony pathfinding</h3>
+<p>Agents wander, drop pheromone on the way back, and a shortest route emerges from the fog after a minute. Move the food and watch the trail migrate.</p>
+<p class="k"><code>ai.onnx.GridSample</code> <code>ai.onnx.ScatterND</code> <code>ai.onnx.Conv</code> <code>ai.onnx.Mul</code> <code>ai.onnx.Clip</code></p>
+<p class="why"><b>Ranks here for</b> significance — it is a real optimisation method and it looks like a nature documentary. <b>Ceiling</b> — shares the slime mould machinery. Build one, then the other is an afternoon.</p>
+<p class="sc"><span>visual <b>5</b></span><span>explain <b>3</b></span><span>surprise <b>3</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>2</b></span><span>standalone <b>4</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<div class="proj">
+<h3 id="p121">7 &middot; Solve a light-switch puzzle with integer algebra</h3>
+<p>A grid of lights. Pressing one flips its neighbours. The page solves the whole board at once by elimination over two-valued arithmetic and shows the winning presses.</p>
+<p class="k"><code>ai.onnx.BitwiseXor</code> <code>ai.onnx.Xor</code> <code>ai.onnx.MatMul</code> <code>ai.onnx.Mod</code> <code>ai.onnx.Where</code></p>
+<p class="why"><b>Ranks here for</b> surprise — a puzzle turns out to be a linear system over a two-element field, and the bitwise kernels handle it directly. <b>Ceiling</b> — elimination is sequential by row, so this is many small dispatches on a small matrix.</p>
+<p class="sc"><span>visual <b>4</b></span><span>explain <b>4</b></span><span>surprise <b>5</b></span><span>kernel <b>3</b></span><span>cost <b>2</b></span><span>risk <b>3</b></span><span>standalone <b>3</b></span><span class="tot">total 76/100</span></p>
+</div>
+
+<hr>
+
+
+<hr>
+
+<h2 id="scores"><span class="cat">Ranking</span>All 121, scored on seven axes</h2>
+
+<p>Every project above now carries a score line. This section says what the seven numbers mean, how the total is weighted, and lists all 121 in one sortable table. The scores are one reader's judgement applied consistently across the whole list. They are not a measurement. Nothing here is built, so no score is confirmed by a running page.</p>
+
+<h3>The seven axes</h3>
+
+<p>Each axis runs from 1 to 5. Each is scored on its own. <strong>Two axes are inverted</strong>, which means a low number is the good one: cost and risk.</p>
+
+<div class="card">
+  <span class="label">Axis definitions</span>
+  <p><strong>Visual</strong> &mdash; how much the screen shows. 1 is a number or a table. 3 is a static plot. 5 is a live picture you can drag, where the picture <em>is</em> the mathematics.</p>
+  <p><strong>Explain</strong> &mdash; what a reader understands afterwards that they did not before. 1 is a feature demonstration. 3 makes a known idea concrete. 5 corrects a common wrong belief.</p>
+  <p><strong>Surprise</strong> &mdash; how unexpected the result is to a reader who knows the field. 1 is the expected answer. 3 is a known effect, rarely seen. 5 makes an expert check it again.</p>
+  <p><strong>Kernel</strong> &mdash; how hard the project pushes the 207-kernel set. 1 is one kernel plus plumbing. 3 is a chain of four to eight kernels, all on the GPU. 5 means one of this document’s documented limits is the project’s main obstacle: a <code>com.microsoft</code> packing rule, the missing sort, the missing inverse, or <code>subgroup-matrix: false</code>. A project that meets a limit and works around it in one line stays at 3 or 4.</p>
+  <p><strong>Cost</strong> <em>(inverted &mdash; low is good)</em> &mdash; build effort. 1 is Tier A, pure kernels, a few hours. 3 is Tier B, which needs input data or a Transformers.js hybrid. 5 is Tier C, which needs real weights or <code>com.microsoft</code> packing.</p>
+  <p><strong>Risk</strong> <em>(inverted &mdash; low is good)</em> &mdash; the chance that it does not work, or that it works and is dull. 1 means every dependency is confirmed on this laptop. 3 means one unmeasured assumption. 5 means it depends on something this document lists as absent or unproven.</p>
+  <p><strong>Standalone</strong> &mdash; does it hold up outside this catalogue. 1 makes sense only beside its neighbours. 3 is a good page on its own. 5 is a page a stranger would keep, or use for real work.</p>
+</div>
+
+<h3>The weighted total</h3>
+
+<p>The two inverted axes are turned around before weighting, so every term rewards a higher number. Cheapness is <code>6 &minus; cost</code>. Safety is <code>6 &minus; risk</code>.</p>
+
+<pre><code>raw = 3&times;visual + 3&times;explain + 2&times;surprise + 1&times;kernel
+    + 2&times;(6 &minus; cost) + 2&times;(6 &minus; risk) + 2&times;standalone
+
+total = raw / 75 &times; 100          raw runs from 15 to 75</code></pre>
+
+<p>The weights say what this document is for. It is a set of pages that must <em>show</em> something and <em>teach</em> something, so visual and explain carry three each. Surprise, cheapness, safety and standalone value carry two each. Kernel exercise carries one, because stressing the library interests the builder and stays invisible to the reader.</p>
+
+<p class="note"><strong>The cost axis does not reproduce the tier counts exactly.</strong> The <a href="#cost">planning section</a> splits the 121 into 64 Tier A, 31 Tier B and 26 Tier C. Scoring cost project by project gives 69 at 1 or 2, 29 at 3, and 23 at 4 or 5. The two counts were made independently and neither was fitted to the other. Where they disagree, trust the tier section for money and this axis for ordering.</p>
+
+<p class="note"><strong>Read the total as a build order, not as a quality score.</strong> It rewards cheap and safe work, so a hard project of real importance sits below an easy attractive one. Sort by a single column when that is what you want. The full decoder layer scores 81. It ties with seven other projects, 26 projects score above it, and it is row 28 in the default order. It is still the correct headline build.</p>
+
+<h3>The table</h3>
+
+<p>Click a column heading to sort by that column. Click it again to reverse the order. The project name links to its entry above. <strong>Cat</strong> is the category number.</p>
+
+<div class="rwrap">
+<table class="rank" id="ranktable">
+<thead><tr><th>Cat</th><th>Project</th><th>Visual</th><th>Explain</th><th>Surprise</th><th>Kernel</th><th>Cost</th><th>Risk</th><th>Stand</th><th>Total</th></tr></thead>
+<tbody>
+<tr><td>3</td><td><a href="#p16">2 &middot; A quantum wavepacket tunnelling through a barrier</a></td><td>5</td><td>5</td><td>5</td><td>4</td><td>3</td><td>2</td><td>5</td><td class="t">91</td></tr>
+<tr><td>4</td><td><a href="#p22">1 &middot; An untrained neural network as a painting machine</a></td><td>5</td><td>4</td><td>5</td><td>2</td><td>1</td><td>2</td><td>5</td><td class="t">89</td></tr>
+<tr><td>6</td><td><a href="#p36">1 &middot; Quantisation error microscope</a></td><td>5</td><td>5</td><td>3</td><td>3</td><td>2</td><td>1</td><td>5</td><td class="t">89</td></tr>
+<tr><td>12</td><td><a href="#p81">6 &middot; Poison the training set with a click</a></td><td>5</td><td>5</td><td>4</td><td>3</td><td>2</td><td>2</td><td>5</td><td class="t">89</td></tr>
+<tr><td>17</td><td><a href="#p111">3 &middot; The cost of coming back to JavaScript</a></td><td>4</td><td>5</td><td>4</td><td>2</td><td>1</td><td>1</td><td>5</td><td class="t">89</td></tr>
+<tr><td>12</td><td><a href="#p76">1 &middot; Train a digit classifier in the tab, then draw a digit</a></td><td>5</td><td>5</td><td>5</td><td>4</td><td>3</td><td>3</td><td>5</td><td class="t">88</td></tr>
+<tr><td>12</td><td><a href="#p77">2 &middot; Two moons, one hidden layer, gradients by hand</a></td><td>5</td><td>5</td><td>3</td><td>4</td><td>2</td><td>2</td><td>5</td><td class="t">88</td></tr>
+<tr><td>11</td><td><a href="#p70">2 &middot; Principal components without a decomposition kernel</a></td><td>4</td><td>5</td><td>4</td><td>4</td><td>2</td><td>2</td><td>5</td><td class="t">87</td></tr>
+<tr><td>14</td><td><a href="#p90">2 &middot; Take a floating point number apart</a></td><td>4</td><td>5</td><td>4</td><td>3</td><td>1</td><td>2</td><td>4</td><td class="t">85</td></tr>
+<tr><td>16</td><td><a href="#p104">3 &middot; Why the stable form of softmax exists</a></td><td>4</td><td>5</td><td>3</td><td>3</td><td>1</td><td>1</td><td>4</td><td class="t">85</td></tr>
+<tr><td>18</td><td><a href="#p115">1 &middot; Slime mould — a million agents that build networks</a></td><td>5</td><td>3</td><td>5</td><td>4</td><td>2</td><td>2</td><td>5</td><td class="t">85</td></tr>
+<tr><td>2</td><td><a href="#p8">1 &middot; Seam carving — the photo shrinks and the subject does not</a></td><td>5</td><td>4</td><td>5</td><td>4</td><td>3</td><td>3</td><td>5</td><td class="t">84</td></tr>
+<tr><td>2</td><td><a href="#p11">4 &middot; Convolution unmasked — im2col, one matrix multiply, and back</a></td><td>4</td><td>5</td><td>4</td><td>4</td><td>2</td><td>2</td><td>4</td><td class="t">84</td></tr>
+<tr><td>3</td><td><a href="#p15">1 &middot; Real-time fluid you can stir with the mouse</a></td><td>5</td><td>4</td><td>5</td><td>4</td><td>3</td><td>3</td><td>5</td><td class="t">84</td></tr>
+<tr><td>14</td><td><a href="#p91">3 &middot; The scan, and everything it builds</a></td><td>4</td><td>5</td><td>3</td><td>4</td><td>2</td><td>1</td><td>4</td><td class="t">84</td></tr>
+<tr><td>16</td><td><a href="#p102">1 &middot; The activation zoo, all twenty of them</a></td><td>4</td><td>4</td><td>2</td><td>5</td><td>1</td><td>1</td><td>5</td><td class="t">84</td></tr>
+<tr><td>1</td><td><a href="#p5">5 &middot; Spectral denoiser with a visible noise profile</a></td><td>5</td><td>4</td><td>3</td><td>3</td><td>2</td><td>2</td><td>5</td><td class="t">83</td></tr>
+<tr><td>3</td><td><a href="#p17">3 &middot; Reaction and diffusion — Turing patterns you can paint into</a></td><td>5</td><td>3</td><td>3</td><td>2</td><td>1</td><td>1</td><td>5</td><td class="t">83</td></tr>
+<tr><td>11</td><td><a href="#p69">1 &middot; k-means on a million points, converging in front of you</a></td><td>5</td><td>4</td><td>2</td><td>3</td><td>1</td><td>1</td><td>4</td><td class="t">83</td></tr>
+<tr><td>11</td><td><a href="#p73">5 &middot; Nearest neighbours you can draw into</a></td><td>5</td><td>4</td><td>2</td><td>3</td><td>1</td><td>1</td><td>4</td><td class="t">83</td></tr>
+<tr><td>12</td><td><a href="#p78">3 &middot; The loss landscape, as a surface you can fly over</a></td><td>5</td><td>4</td><td>5</td><td>3</td><td>3</td><td>3</td><td>5</td><td class="t">83</td></tr>
+<tr><td>13</td><td><a href="#p83">1 &middot; PageRank, flowing across a real graph</a></td><td>5</td><td>4</td><td>3</td><td>3</td><td>2</td><td>2</td><td>5</td><td class="t">83</td></tr>
+<tr><td>13</td><td><a href="#p84">2 &middot; Solve a linear system with no solver</a></td><td>3</td><td>5</td><td>5</td><td>4</td><td>2</td><td>2</td><td>4</td><td class="t">83</td></tr>
+<tr><td>17</td><td><a href="#p112">4 &middot; Find the corner of your card's performance</a></td><td>4</td><td>5</td><td>3</td><td>3</td><td>2</td><td>2</td><td>5</td><td class="t">83</td></tr>
+<tr><td>18</td><td><a href="#p117">3 &middot; Life, at sixteen million cells</a></td><td>5</td><td>3</td><td>3</td><td>2</td><td>1</td><td>1</td><td>5</td><td class="t">83</td></tr>
+<tr><td>18</td><td><a href="#p119">5 &middot; Watch a maze get solved by a spreading wave</a></td><td>5</td><td>4</td><td>4</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">83</td></tr>
+<tr><td>1</td><td><a href="#p3">3 &middot; Audio fingerprint matcher — the Shazam trick, visible</a></td><td>5</td><td>4</td><td>5</td><td>4</td><td>3</td><td>3</td><td>4</td><td class="t">81</td></tr>
+<tr><td>5</td><td><a href="#p29">1 &middot; One full decoder layer, real weights, every head visible</a></td><td>5</td><td>5</td><td>5</td><td>5</td><td>5</td><td>4</td><td>5</td><td class="t">81</td></tr>
+<tr><td>7</td><td><a href="#p43">1 &middot; Paged attention, drawn as a memory map</a></td><td>5</td><td>5</td><td>5</td><td>5</td><td>5</td><td>4</td><td>5</td><td class="t">81</td></tr>
+<tr><td>10</td><td><a href="#p63">2 &middot; Embedding atlas — ten thousand documents as a map hybrid</a></td><td>5</td><td>4</td><td>4</td><td>4</td><td>3</td><td>3</td><td>5</td><td class="t">81</td></tr>
+<tr><td>13</td><td><a href="#p85">3 &middot; Split a network in two along its natural seam</a></td><td>5</td><td>4</td><td>5</td><td>4</td><td>3</td><td>3</td><td>4</td><td class="t">81</td></tr>
+<tr><td>14</td><td><a href="#p89">1 &middot; A data table on the GPU: filter, group and join a million rows</a></td><td>4</td><td>4</td><td>5</td><td>5</td><td>3</td><td>3</td><td>5</td><td class="t">81</td></tr>
+<tr><td>15</td><td><a href="#p98">3 &middot; Deformable sampling, drawn on the image</a></td><td>5</td><td>4</td><td>5</td><td>4</td><td>3</td><td>3</td><td>4</td><td class="t">81</td></tr>
+<tr><td>16</td><td><a href="#p107">6 &middot; Broadcasting, drawn as blocks</a></td><td>4</td><td>5</td><td>2</td><td>2</td><td>1</td><td>1</td><td>4</td><td class="t">81</td></tr>
+<tr><td>7</td><td><a href="#p46">4 &middot; The quadratic wall, measured on your own card</a></td><td>4</td><td>5</td><td>3</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">80</td></tr>
+<tr><td>8</td><td><a href="#p49">1 &middot; Routing map — watch tokens pick their experts</a></td><td>5</td><td>5</td><td>5</td><td>4</td><td>5</td><td>4</td><td>5</td><td class="t">80</td></tr>
+<tr><td>16</td><td><a href="#p103">2 &middot; Einstein summation playground</a></td><td>3</td><td>4</td><td>4</td><td>3</td><td>1</td><td>2</td><td>5</td><td class="t">80</td></tr>
+<tr><td>17</td><td><a href="#p113">5 &middot; Watch the laptop get slower as it warms</a></td><td>4</td><td>4</td><td>4</td><td>2</td><td>1</td><td>2</td><td>4</td><td class="t">80</td></tr>
+<tr><td>2</td><td><a href="#p9">2 &middot; Seamless clone — paste a face into another photo with no visible edge</a></td><td>5</td><td>4</td><td>3</td><td>4</td><td>3</td><td>3</td><td>5</td><td class="t">79</td></tr>
+<tr><td>2</td><td><a href="#p14">7 &middot; Pooling and unpooling, made visible</a></td><td>4</td><td>4</td><td>4</td><td>3</td><td>1</td><td>1</td><td>2</td><td class="t">79</td></tr>
+<tr><td>3</td><td><a href="#p18">4 &middot; Ripple tank with a double slit</a></td><td>5</td><td>4</td><td>3</td><td>2</td><td>2</td><td>2</td><td>4</td><td class="t">79</td></tr>
+<tr><td>15</td><td><a href="#p97">2 &middot; Overlap suppression, with a slider</a></td><td>5</td><td>4</td><td>2</td><td>2</td><td>2</td><td>1</td><td>4</td><td class="t">79</td></tr>
+<tr><td>15</td><td><a href="#p101">6 &middot; Anchor boxes, all of them, at once</a></td><td>5</td><td>4</td><td>2</td><td>2</td><td>1</td><td>1</td><td>3</td><td class="t">79</td></tr>
+<tr><td>1</td><td><a href="#p1">1 &middot; Convolution reverb — put a voice inside a cathedral</a></td><td>3</td><td>4</td><td>4</td><td>3</td><td>2</td><td>2</td><td>5</td><td class="t">77</td></tr>
+<tr><td>1</td><td><a href="#p4">4 &middot; Live spectrogram waterfall</a></td><td>5</td><td>3</td><td>2</td><td>2</td><td>1</td><td>1</td><td>4</td><td class="t">77</td></tr>
+<tr><td>5</td><td><a href="#p30">2 &middot; Head atlas — find the induction heads yourself</a></td><td>5</td><td>5</td><td>4</td><td>4</td><td>5</td><td>4</td><td>5</td><td class="t">77</td></tr>
+<tr><td>5</td><td><a href="#p31">3 &middot; Logit lens — read the model's mind at every layer hybrid</a></td><td>4</td><td>5</td><td>5</td><td>3</td><td>4</td><td>3</td><td>4</td><td class="t">77</td></tr>
+<tr><td>5</td><td><a href="#p32">4 &middot; Rotary position embedding, drawn as rotation</a></td><td>4</td><td>5</td><td>2</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">77</td></tr>
+<tr><td>6</td><td><a href="#p41">6 &middot; Watch the scale get chosen</a></td><td>3</td><td>5</td><td>3</td><td>2</td><td>1</td><td>1</td><td>3</td><td class="t">77</td></tr>
+<tr><td>9</td><td><a href="#p57">3 &middot; Three recurrent cells on one problem</a></td><td>4</td><td>5</td><td>3</td><td>3</td><td>2</td><td>2</td><td>3</td><td class="t">77</td></tr>
+<tr><td>15</td><td><a href="#p96">1 &middot; Build the detection head yourself hybrid</a></td><td>5</td><td>5</td><td>3</td><td>4</td><td>4</td><td>4</td><td>5</td><td class="t">77</td></tr>
+<tr><td>17</td><td><a href="#p109">1 &middot; Two graphics cards, one page</a></td><td>3</td><td>5</td><td>4</td><td>2</td><td>2</td><td>3</td><td>5</td><td class="t">77</td></tr>
+<tr><td>3</td><td><a href="#p19">5 &middot; N-body galaxy</a></td><td>5</td><td>3</td><td>3</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">76</td></tr>
+<tr><td>3</td><td><a href="#p20">6 &middot; Cloth on a lattice</a></td><td>5</td><td>3</td><td>3</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">76</td></tr>
+<tr><td>6</td><td><a href="#p40">5 &middot; Integer image pipeline against a float one</a></td><td>5</td><td>4</td><td>3</td><td>4</td><td>3</td><td>3</td><td>4</td><td class="t">76</td></tr>
+<tr><td>11</td><td><a href="#p72">4 &middot; Soft clustering with expectation and maximisation</a></td><td>5</td><td>4</td><td>3</td><td>4</td><td>3</td><td>3</td><td>4</td><td class="t">76</td></tr>
+<tr><td>11</td><td><a href="#p74">6 &middot; Density estimation as a landscape</a></td><td>4</td><td>4</td><td>2</td><td>3</td><td>1</td><td>1</td><td>3</td><td class="t">76</td></tr>
+<tr><td>18</td><td><a href="#p118">4 &middot; Flocking, ten thousand birds</a></td><td>5</td><td>3</td><td>3</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">76</td></tr>
+<tr><td>18</td><td><a href="#p120">6 &middot; Ant colony pathfinding</a></td><td>5</td><td>3</td><td>3</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">76</td></tr>
+<tr><td>18</td><td><a href="#p121">7 &middot; Solve a light-switch puzzle with integer algebra</a></td><td>4</td><td>4</td><td>5</td><td>3</td><td>2</td><td>3</td><td>3</td><td class="t">76</td></tr>
+<tr><td>2</td><td><a href="#p12">5 &middot; Sub-pixel upscaling with a channel shuffle</a></td><td>4</td><td>4</td><td>4</td><td>2</td><td>2</td><td>2</td><td>3</td><td class="t">75</td></tr>
+<tr><td>5</td><td><a href="#p35">7 &middot; Temperature, top-k and the hard maximum</a></td><td>4</td><td>4</td><td>2</td><td>2</td><td>1</td><td>1</td><td>3</td><td class="t">75</td></tr>
+<tr><td>9</td><td><a href="#p56">2 &middot; Look inside an LSTM while it reads</a></td><td>5</td><td>4</td><td>3</td><td>3</td><td>3</td><td>3</td><td>4</td><td class="t">75</td></tr>
+<tr><td>18</td><td><a href="#p116">2 &middot; Falling sand</a></td><td>5</td><td>2</td><td>3</td><td>3</td><td>2</td><td>2</td><td>5</td><td class="t">75</td></tr>
+<tr><td>1</td><td><a href="#p6">6 &middot; Pitch tracker by cepstrum</a></td><td>3</td><td>4</td><td>5</td><td>2</td><td>2</td><td>2</td><td>3</td><td class="t">73</td></tr>
+<tr><td>2</td><td><a href="#p10">3 &middot; Warp studio — drag the corners, bend the picture</a></td><td>5</td><td>3</td><td>2</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">73</td></tr>
+<tr><td>7</td><td><a href="#p48">6 &middot; Prefill against decode, as two different machines</a></td><td>3</td><td>5</td><td>4</td><td>3</td><td>3</td><td>3</td><td>4</td><td class="t">73</td></tr>
+<tr><td>12</td><td><a href="#p80">5 &middot; Optimiser race on one chart</a></td><td>4</td><td>4</td><td>3</td><td>3</td><td>3</td><td>2</td><td>4</td><td class="t">73</td></tr>
+<tr><td>14</td><td><a href="#p94">6 &middot; Bit-trick sandbox</a></td><td>4</td><td>3</td><td>4</td><td>4</td><td>2</td><td>2</td><td>3</td><td class="t">73</td></tr>
+<tr><td>16</td><td><a href="#p106">5 &middot; The complete reduction gallery</a></td><td>3</td><td>4</td><td>1</td><td>4</td><td>1</td><td>1</td><td>4</td><td class="t">73</td></tr>
+<tr><td>1</td><td><a href="#p2">2 &middot; Phase vocoder — slow speech down without lowering the pitch</a></td><td>4</td><td>4</td><td>3</td><td>4</td><td>3</td><td>3</td><td>4</td><td class="t">72</td></tr>
+<tr><td>4</td><td><a href="#p24">3 &middot; Strange attractor density maps</a></td><td>5</td><td>2</td><td>3</td><td>3</td><td>2</td><td>2</td><td>4</td><td class="t">72</td></tr>
+<tr><td>10</td><td><a href="#p62">1 &middot; Search your own notes, entirely on your machine hybrid</a></td><td>3</td><td>4</td><td>3</td><td>3</td><td>3</td><td>2</td><td>5</td><td class="t">72</td></tr>
+<tr><td>10</td><td><a href="#p67">6 &middot; Five languages, one meaning hybrid</a></td><td>4</td><td>4</td><td>5</td><td>2</td><td>3</td><td>3</td><td>3</td><td class="t">72</td></tr>
+<tr><td>11</td><td><a href="#p71">3 &middot; Correlation heat map for any dropped spreadsheet</a></td><td>4</td><td>3</td><td>2</td><td>3</td><td>2</td><td>2</td><td>5</td><td class="t">72</td></tr>
+<tr><td>16</td><td><a href="#p108">7 &middot; Does the GPU agree with JavaScript</a></td><td>3</td><td>3</td><td>4</td><td>4</td><td>1</td><td>2</td><td>3</td><td class="t">72</td></tr>
+<tr><td>4</td><td><a href="#p25">4 &middot; Domain-warped noise landscape</a></td><td>5</td><td>2</td><td>3</td><td>2</td><td>2</td><td>2</td><td>4</td><td class="t">71</td></tr>
+<tr><td>7</td><td><a href="#p45">3 &middot; Sparse attention pattern explorer</a></td><td>5</td><td>4</td><td>3</td><td>4</td><td>4</td><td>4</td><td>4</td><td class="t">71</td></tr>
+<tr><td>8</td><td><a href="#p50">2 &middot; Do experts specialise? Test it yourself</a></td><td>4</td><td>5</td><td>4</td><td>4</td><td>5</td><td>5</td><td>5</td><td class="t">71</td></tr>
+<tr><td>9</td><td><a href="#p55">1 &middot; A state-space block, running in a tab</a></td><td>3</td><td>5</td><td>5</td><td>5</td><td>4</td><td>5</td><td>4</td><td class="t">71</td></tr>
+<tr><td>9</td><td><a href="#p60">6 &middot; Reverse a batch of padded sequences correctly</a></td><td>3</td><td>4</td><td>3</td><td>2</td><td>1</td><td>1</td><td>2</td><td class="t">71</td></tr>
+<tr><td>10</td><td><a href="#p64">3 &middot; Near-duplicate hunter over a large text set hybrid</a></td><td>3</td><td>4</td><td>3</td><td>4</td><td>3</td><td>3</td><td>5</td><td class="t">71</td></tr>
+<tr><td>11</td><td><a href="#p75">7 &middot; Monte Carlo estimation, with the awkward part named</a></td><td>3</td><td>4</td><td>3</td><td>4</td><td>2</td><td>3</td><td>4</td><td class="t">71</td></tr>
+<tr><td>12</td><td><a href="#p82">7 &middot; Watch a model start to memorise</a></td><td>4</td><td>4</td><td>2</td><td>3</td><td>2</td><td>2</td><td>3</td><td class="t">71</td></tr>
+<tr><td>13</td><td><a href="#p87">5 &middot; Where does a Markov chain settle</a></td><td>3</td><td>4</td><td>2</td><td>2</td><td>1</td><td>1</td><td>3</td><td class="t">71</td></tr>
+<tr><td>13</td><td><a href="#p88">6 &middot; Why some systems are hard</a></td><td>3</td><td>5</td><td>3</td><td>3</td><td>2</td><td>3</td><td>3</td><td class="t">71</td></tr>
+<tr><td>17</td><td><a href="#p110">2 &middot; Which shader variant did it choose, and why</a></td><td>3</td><td>4</td><td>5</td><td>4</td><td>3</td><td>4</td><td>4</td><td class="t">71</td></tr>
+<tr><td>4</td><td><a href="#p23">2 &middot; Flow-field particle painting</a></td><td>5</td><td>2</td><td>3</td><td>3</td><td>2</td><td>3</td><td>4</td><td class="t">69</td></tr>
+<tr><td>7</td><td><a href="#p44">2 &middot; Multi-head against grouped-query against multi-query</a></td><td>3</td><td>5</td><td>3</td><td>4</td><td>4</td><td>3</td><td>4</td><td class="t">69</td></tr>
+<tr><td>7</td><td><a href="#p47">5 &middot; Cache eviction, and what forgetting sounds like</a></td><td>4</td><td>4</td><td>5</td><td>4</td><td>5</td><td>4</td><td>4</td><td class="t">69</td></tr>
+<tr><td>16</td><td><a href="#p105">4 &middot; Half precision, and where it breaks</a></td><td>3</td><td>4</td><td>3</td><td>3</td><td>2</td><td>2</td><td>3</td><td class="t">69</td></tr>
+<tr><td>2</td><td><a href="#p13">6 &middot; Filter rack with an editable matrix</a></td><td>4</td><td>3</td><td>1</td><td>2</td><td>1</td><td>1</td><td>3</td><td class="t">68</td></tr>
+<tr><td>4</td><td><a href="#p28">7 &middot; Checkerboard artefacts as a subject</a></td><td>3</td><td>4</td><td>4</td><td>2</td><td>2</td><td>2</td><td>2</td><td class="t">68</td></tr>
+<tr><td>5</td><td><a href="#p33">5 &middot; Three norms, one set of activations</a></td><td>3</td><td>4</td><td>3</td><td>4</td><td>3</td><td>2</td><td>3</td><td class="t">68</td></tr>
+<tr><td>10</td><td><a href="#p66">5 &middot; Compress the vectors and measure what you lost</a></td><td>3</td><td>4</td><td>3</td><td>4</td><td>3</td><td>3</td><td>4</td><td class="t">68</td></tr>
+<tr><td>13</td><td><a href="#p86">4 &middot; Influence spreading through a network</a></td><td>4</td><td>4</td><td>3</td><td>3</td><td>3</td><td>3</td><td>3</td><td class="t">68</td></tr>
+<tr><td>14</td><td><a href="#p95">7 &middot; Reorder a million rows without a sort</a></td><td>3</td><td>4</td><td>3</td><td>4</td><td>2</td><td>3</td><td>3</td><td class="t">68</td></tr>
+<tr><td>6</td><td><a href="#p37">2 &middot; The same layer at four bits and at thirty-two</a></td><td>3</td><td>5</td><td>3</td><td>4</td><td>4</td><td>4</td><td>4</td><td class="t">67</td></tr>
+<tr><td>8</td><td><a href="#p51">3 &middot; Load collapse, live</a></td><td>4</td><td>4</td><td>4</td><td>4</td><td>5</td><td>4</td><td>4</td><td class="t">67</td></tr>
+<tr><td>12</td><td><a href="#p79">4 &middot; Teach a real model a new class in thirty seconds hybrid</a></td><td>3</td><td>4</td><td>3</td><td>3</td><td>4</td><td>3</td><td>5</td><td class="t">67</td></tr>
+<tr><td>15</td><td><a href="#p99">4 &middot; Why aligned pooling replaced rounded pooling</a></td><td>3</td><td>4</td><td>3</td><td>3</td><td>2</td><td>3</td><td>3</td><td class="t">67</td></tr>
+<tr><td>1</td><td><a href="#p7">7 &middot; Window function explorer</a></td><td>3</td><td>4</td><td>1</td><td>2</td><td>1</td><td>1</td><td>2</td><td class="t">65</td></tr>
+<tr><td>3</td><td><a href="#p21">7 &middot; Heat equation sandbox</a></td><td>4</td><td>3</td><td>1</td><td>2</td><td>1</td><td>1</td><td>2</td><td class="t">65</td></tr>
+<tr><td>4</td><td><a href="#p26">5 &middot; Deep zoom into the Mandelbrot set</a></td><td>5</td><td>2</td><td>1</td><td>2</td><td>1</td><td>2</td><td>3</td><td class="t">65</td></tr>
+<tr><td>5</td><td><a href="#p34">6 &middot; Fusion audit — do the fused kernels give the same answer</a></td><td>2</td><td>4</td><td>4</td><td>5</td><td>3</td><td>3</td><td>3</td><td class="t">65</td></tr>
+<tr><td>6</td><td><a href="#p38">3 &middot; Block size sweep — where quality falls off a cliff</a></td><td>3</td><td>4</td><td>4</td><td>4</td><td>4</td><td>4</td><td>4</td><td class="t">65</td></tr>
+<tr><td>9</td><td><a href="#p58">4 &middot; Streaming state, proven identical to batch</a></td><td>2</td><td>5</td><td>3</td><td>4</td><td>3</td><td>3</td><td>3</td><td class="t">65</td></tr>
+<tr><td>15</td><td><a href="#p100">5 &middot; Clean up a rough segmentation mask hybrid</a></td><td>5</td><td>3</td><td>2</td><td>3</td><td>4</td><td>3</td><td>4</td><td class="t">65</td></tr>
+<tr><td>4</td><td><a href="#p27">6 &middot; Truchet tiles and quasi-periodic patterns</a></td><td>4</td><td>2</td><td>2</td><td>2</td><td>1</td><td>2</td><td>3</td><td class="t">64</td></tr>
+<tr><td>6</td><td><a href="#p39">4 &middot; A vocabulary table that fits in a pocket</a></td><td>3</td><td>4</td><td>4</td><td>5</td><td>4</td><td>4</td><td>3</td><td class="t">64</td></tr>
+<tr><td>10</td><td><a href="#p65">4 &middot; A retrieval-augmented answer, fully local hybrid</a></td><td>3</td><td>4</td><td>3</td><td>3</td><td>4</td><td>4</td><td>5</td><td class="t">64</td></tr>
+<tr><td>10</td><td><a href="#p68">7 &middot; Re-rank the shortlist and watch the order change hybrid</a></td><td>4</td><td>4</td><td>2</td><td>2</td><td>3</td><td>3</td><td>3</td><td class="t">64</td></tr>
+<tr><td>17</td><td><a href="#p114">6 &middot; Full census of what your adapters support</a></td><td>2</td><td>3</td><td>2</td><td>1</td><td>1</td><td>1</td><td>4</td><td class="t">64</td></tr>
+<tr><td>14</td><td><a href="#p92">4 &middot; Sparse matrix multiplication with no sparse kernel</a></td><td>2</td><td>4</td><td>3</td><td>4</td><td>3</td><td>4</td><td>4</td><td class="t">61</td></tr>
+<tr><td>9</td><td><a href="#p59">5 &middot; Ragged batches without waste</a></td><td>3</td><td>4</td><td>3</td><td>4</td><td>4</td><td>4</td><td>3</td><td class="t">60</td></tr>
+<tr><td>14</td><td><a href="#p93">5 &middot; Deduplicate and compare large sets</a></td><td>2</td><td>3</td><td>2</td><td>4</td><td>2</td><td>3</td><td>4</td><td class="t">60</td></tr>
+<tr><td>8</td><td><a href="#p52">4 &middot; How many experts per token is enough</a></td><td>3</td><td>4</td><td>3</td><td>4</td><td>5</td><td>4</td><td>3</td><td class="t">57</td></tr>
+<tr><td>9</td><td><a href="#p61">7 &middot; A loop that lives in the graph</a></td><td>2</td><td>4</td><td>4</td><td>4</td><td>3</td><td>5</td><td>2</td><td class="t">56</td></tr>
+<tr><td>6</td><td><a href="#p42">7 &middot; The fused quantised blocks of a real model</a></td><td>2</td><td>4</td><td>3</td><td>5</td><td>5</td><td>5</td><td>3</td><td class="t">52</td></tr>
+<tr><td>8</td><td><a href="#p54">6 &middot; Quantised experts against full-precision experts</a></td><td>2</td><td>4</td><td>3</td><td>5</td><td>5</td><td>5</td><td>3</td><td class="t">52</td></tr>
+<tr><td>8</td><td><a href="#p53">5 &middot; The parameter count that is never used</a></td><td>2</td><td>4</td><td>2</td><td>2</td><td>4</td><td>3</td><td>2</td><td class="t">51</td></tr>
+</tbody>
+</table>
+</div>
+
+<script>
+// ponytail: one click-to-sort handler, no library. Column 2 sorts as text, the rest as numbers.
+document.querySelectorAll('#ranktable th').forEach(function(th,i){
+  th.addEventListener('click',function(){
+    var tb=th.closest('table').tBodies[0], rows=[].slice.call(tb.rows);
+    // numeric columns start descending, the name column starts ascending
+    var first=th.dataset.asc===undefined;
+    var asc=first?(i===1):(th.dataset.asc!=='1'); th.dataset.asc=asc?'1':'0';
+    rows.sort(function(a,b){
+      var x=a.cells[i].textContent, y=b.cells[i].textContent;
+      var r=(i===1)?x.localeCompare(y):(parseFloat(x)-parseFloat(y));
+      return asc?r:-r;
+    });
+    rows.forEach(function(r){tb.appendChild(r)});
+  });
+});
+</script>
+
+<h3>What the scores say</h3>
+
+<p><strong>The cheap and safe top.</strong> A sort by total puts one kind of page at the head: a large live picture, every dependency confirmed, an afternoon of work. The quantum wavepacket leads at 91. Four projects tie at 89 &mdash; the readback-cost curve, the poisoned training set, the quantisation error microscope and the untrained painting network. Then the two moons and the digit classifier at 88, and principal components at 87. Build from the top of this list when you want finished pages quickly.</p>
+
+<p><strong>The expensive and important tail.</strong> Sort by explain instead, then read upward through the low totals. You find the opposite group: the fused quantised blocks of a real model, the quantised expert mixture, and the expert-count sweep. The fused blocks and the quantised experts both score 52, and the unused-parameter counter scores 51. Each of the first two scores 4 for explain, 5 for kernel exercise, and 5 for both cost and risk. The total punishes these projects and the field cares about them. Do not read a low total as permission to skip one.</p>
+
+<p><strong>The two columns that disagree most.</strong> Visual and explain part company at both ends. The Mandelbrot zoom scores 5 for visual and 2 for explain. The streaming-state proof scores 2 for visual and 5 for explain. Neither is the worse project. They are different projects, and one total cannot say so. That is why the seven numbers stay on the page beside each entry.</p>
+
+<hr>
+
+<h2 id="cost"><span class="cat">Planning</span>What building them all would cost</h2>
+
+<div class="card">
+  <span class="label">Read this first</span>
+  <p>Every number in this section is an estimate. None of the 121 projects has been built yet, so nothing here is measured. Treat each range as a planning figure with an error of about half in either direction. The first completed batch replaces all of them with real data.</p>
+</div>
+
+<h3>Three tiers of work</h3>
+
+<p><strong>Tier A — pure kernel arithmetic.</strong> No weights, no dataset, no file parsing. Write the page, serve it, fix two or three shape errors, finish. <strong>60,000 to 120,000 tokens each.</strong></p>
+
+<p><strong>Tier B — needs data or a model behind it.</strong> A dropped file, a cached dataset, or Transformers.js producing vectors. This is Tier A plus a second surface that can fail. <strong>150,000 to 300,000 tokens each.</strong></p>
+
+<p><strong>Tier C — real weights, or a <code>com.microsoft</code> packing convention.</strong> Safetensors parsing, block layouts, cache book-keeping. These fail silently, because a wrong layout returns numbers instead of an error. The debugging loop is therefore long. <strong>400,000 to 800,000 tokens each.</strong></p>
+
+<h3>Where the 121 fall</h3>
+
+<table>
+  <tr><th>Category</th><th class="num">A</th><th class="num">B</th><th class="num">C</th><th class="num">Total</th></tr>
+  <tr><td>1 Audio and signals</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>2 Images and pixels</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>3 Physics</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>4 Generative art</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>5 Transformer internals</td><td class="num">1</td><td class="num">1</td><td class="num">5</td><td class="num">7</td></tr>
+  <tr><td>6 Quantisation</td><td class="num">1</td><td class="num">1</td><td class="num">5</td><td class="num">7</td></tr>
+  <tr><td>7 Attention memory</td><td class="num">0</td><td class="num">0</td><td class="num">6</td><td class="num">6</td></tr>
+  <tr><td>8 Mixture of Experts</td><td class="num">0</td><td class="num">0</td><td class="num">6</td><td class="num">6</td></tr>
+  <tr><td>9 Sequences without transformers</td><td class="num">2</td><td class="num">3</td><td class="num">2</td><td class="num">7</td></tr>
+  <tr><td>10 Retrieval and search</td><td class="num">0</td><td class="num">7</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>11 Classical machine learning</td><td class="num">3</td><td class="num">4</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>12 Training in the browser</td><td class="num">0</td><td class="num">6</td><td class="num">1</td><td class="num">7</td></tr>
+  <tr><td>13 Linear algebra and graphs</td><td class="num">4</td><td class="num">2</td><td class="num">0</td><td class="num">6</td></tr>
+  <tr><td>14 GPU primitives and data work</td><td class="num">4</td><td class="num">3</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>15 Vision heads</td><td class="num">1</td><td class="num">4</td><td class="num">1</td><td class="num">6</td></tr>
+  <tr><td>16 Teaching toys</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>17 Hardware forensics</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td class="num">6</td></tr>
+  <tr><td>18 Games</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><th>Total</th><th class="num">64</th><th class="num">31</th><th class="num">26</th><th class="num">121</th></tr>
+</table>
+
+<h3>The total</h3>
+
+<table>
+  <tr><th>Tier</th><th class="num">Count</th><th class="num">Low</th><th class="num">High</th></tr>
+  <tr><td>A</td><td class="num">64</td><td class="num">3.8M</td><td class="num">7.7M</td></tr>
+  <tr><td>B</td><td class="num">31</td><td class="num">4.7M</td><td class="num">9.3M</td></tr>
+  <tr><td>C</td><td class="num">26</td><td class="num">10.4M</td><td class="num">20.8M</td></tr>
+  <tr><th>All 121</th><th class="num">121</th><th class="num win">19M</th><th class="num win">38M</th></tr>
+</table>
+
+<p>Add about 15% for orchestration: planning each batch, reading each result, and re-running the kernel-name check. <strong>A planning figure of 25 million tokens is reasonable.</strong> Notice that the 26 Tier C projects carry more than half the total cost while being a fifth of the list.</p>
+
+<h3>Time</h3>
+
+<p>One project at a time, including running each page in Chrome and looking at it: <strong>80 to 160 hours</strong> of agent work. With four to six subagents in parallel: <strong>20 to 40 hours of wall clock</strong>, spread realistically over one or two weeks, because you must judge each page yourself. Parallel agents do not remove that step.</p>
+
+<h3>Which model builds which tier</h3>
+
+<table>
+  <tr><th>Tier</th><th>Model</th><th>Reason</th></tr>
+  <tr><td>A</td><td>Sonnet 5</td><td>Short maths and a repeating pattern. A stronger model adds nothing.</td></tr>
+  <tr><td>B</td><td>Sonnet 5, raised to Opus 5 when it stalls</td><td>File loading and caching are ordinary work.</td></tr>
+  <tr><td>C</td><td>Opus 5</td><td>Silent numerical failure and strict layouts. A weaker model spends tokens without converging.</td></tr>
+  <tr><td>A variant of a page already built</td><td>Haiku 4.5</td><td>Copy a working page. Change the kernel and the labels.</td></tr>
+</table>
+
+<p>This split puts 26 projects on Opus and the other 95 on Sonnet or Haiku. Most of the saving in the estimate above comes from that one decision.</p>
+
+<h3>Which weights</h3>
+
+<p>About twenty projects need a real model, and each must fit in 4 GB beside the browser. Stay at roughly 500M parameters or below. A small sentence-embedding model covers every project in category 10. A sub-1B decoder covers category 5, and a four-bit build of the same model covers the comparisons in category 6. A small sparse model covers category 8. A detection backbone covers category 15.</p>
+
+<p class="note">No specific checkpoint has been tested from a localhost page on this laptop. Confirming that a Hugging Face <code>resolve/</code> URL serves safetensors with headers a local page accepts is the cheapest thing to check before any Tier C work starts.</p>
+
+<h3>The recommendation</h3>
+
+<p>Do not build all 121. This document is worth more as a menu than as a backlog.</p>
+
+<p>Build 10 to 15 first. Take one from each category that interests you, weighted toward Tier A. That costs <strong>1.5 to 2.5 million tokens</strong> and two or three sessions. It also produces the number this whole section is guessing at, which is the true cost of one project on this hardware. Re-plan after that, with data instead of estimates.</p>
+
+<p>If the full run still looks correct afterwards, run it in tier order, cheapest first: the 64 Tier A projects, then the 31 Tier B, then the 26 Tier C. Each batch tells you whether to continue, and the expensive tier becomes the last commitment instead of the first.</p>
+
+<hr>
+
+<h2 id="build"><span class="cat">Closing</span>If you build three of these, build these three</h2>
+
+<p><strong>Start with the readback curve</strong> (category 17, project 3). It is half a day, it re-uses <code>bench.html</code> almost unchanged, and every other project depends on knowing the shape of that curve on your card.</p>
+
+<p><strong>Then the decoder layer with real weights</strong> (category 5, project 1). It is the headline. It is the one you show people. It also forces you to solve safetensors parsing, which unlocks every other project that needs real weights.</p>
+
+<p><strong>Then pick by taste.</strong> For the best picture, build the slime mould or the fluid. For the most useful tool, build the local notes search. For the biggest surprise, train the digit classifier in a browser tab with hand-written gradients.</p>
+
+<div class="card teal">
+  <span class="label">Honest accounting of the 207</span>
+  <p>These 121 projects name 179 of the 207 kernels directly. That count was checked by extracting every kernel name from this file and comparing it against the Hub list. No invented name survived.</p>
+  <p>The 28 that go unnamed are not gaps in the plan. Six are duplicates that exist in both namespaces or as fusions of something already used: <code>com.microsoft.Gelu</code>, <code>com.microsoft.LinearAttention</code>, <code>com.microsoft.CausalConvWithState</code>, <code>com.microsoft.BiasAdd</code>, <code>com.microsoft.BiasSoftmax</code> and <code>com.microsoft.EmbedLayerNormalization</code>. Four more are normalisation variants that slot into any project in categories 2 and 5: <code>ai.onnx.BatchNormalization</code>, <code>ai.onnx.InstanceNormalization</code>, <code>ai.onnx.GroupNormalization</code> and <code>ai.onnx.MeanVarianceNormalization</code>. The remaining eighteen are plumbing and simple arithmetic — <code>Flatten</code>, <code>Split</code>, <code>Squeeze</code>, <code>Unsqueeze</code>, <code>Neg</code>, <code>Not</code>, <code>Ceil</code>, <code>Reciprocal</code>, <code>Sum</code>, <code>Mean</code>, the global pooling family, the two <em>or equal</em> comparisons, and the deprecated <code>Scatter</code>, <code>Upsample</code> and <code>SplitToSequence</code>. They support a project. They cannot anchor one.</p>
+</div>
+
+<div class="card">
+  <span class="label">What is still assumed, not verified</span>
+  <p>Three things in this document are reasoning rather than measurement, and each one is cheap to settle. First, that safetensors files fetch from a Hub <code>resolve/</code> URL with headers that allow a localhost page — Transformers.js works this way, so it is likely, but it is not yet tested here. Second, that a model near 500M parameters fits comfortably in 4 GB alongside the browser. Third, that the <code>com.microsoft</code> kernels accept input layouts a hand-written page can produce. Every project above that depends on one of these says so in its ceiling line.</p>
+</div>
+
+<footer>
+  <p>Companion to <a href="webgpu-kernels-report.html">the WebGPU kernels research report</a>. Kernel names taken from the Hugging Face Hub API list of 207 on 4 September 2026. Manifests for <code>ai.onnx.STFT</code>, <code>ai.onnx.Conv</code>, <code>ai.onnx.Attention</code>, <code>ai.onnx.Einsum</code>, <code>ai.onnx.GridSample</code>, <code>ai.onnx.CumSum</code>, <code>ai.onnx.RotaryEmbedding</code>, <code>ai.onnx.SwiGLU</code>, <code>ai.onnx.HannWindow</code>, <code>ai.onnx.DFT</code>, <code>ai.onnx.Dropout</code>, <code>com.microsoft.MatMulNBits</code> and <code>com.microsoft.MoE</code> were read directly. Performance numbers are from this laptop's RTX 3050 and carry about 10% run-to-run variance.</p>
+</footer>
+
+</div>
+</body>
+</html>

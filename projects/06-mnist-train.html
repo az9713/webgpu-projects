@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Train a digit classifier in the tab, then draw a digit</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;background:#0b1220}
+  button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:230px;font-size:.9rem}
+  .stat b{color:#2dd4bf;font-weight:600;font-size:1.05rem}
+  .stat div{margin-bottom:6px}
+  #pad{cursor:crosshair;touch-action:none}
+  .bars{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;width:224px;height:110px;align-items:end}
+  .bars div{background:#334155;border-radius:3px 3px 0 0;position:relative;min-height:2px}
+  .bars div.top{background:#fb923c}
+  .bars span{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:.8rem;color:#94a3b8}
+  h2{color:#fb923c;font-size:1rem;margin:16px 0 6px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Train a digit classifier in the tab, then draw a digit</h1>
+<p>Nothing is pre-trained. The page fetches 22,000 MNIST images, trains a one-hidden-layer network with kernel calls only, and draws the loss as it falls. When the curve flattens, draw a digit with the mouse and the page reads it.</p>
+<div class="row" style="margin-bottom:10px">
+  <label>hidden units <select id="hid"><option>32</option><option selected>64</option><option>128</option></select></label>
+  <button id="restart">Restart training</button><button id="pause">Pause</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row">
+  <canvas id="loss" width="480" height="240"></canvas>
+  <div class="stat">
+    <div>steps <b id="steps">0</b> &nbsp; epochs <b id="ep">0.00</b></div>
+    <div>training loss <b id="lv">–</b></div>
+    <div>test accuracy, 2,000 held-out images <b id="acc">–</b></div>
+    <div>steps per second <b id="sps">–</b></div>
+    <div style="color:#94a3b8;margin-top:8px">batch 128, learning rate 0.3, 784 &rarr; hidden &rarr; 10</div>
+  </div>
+</div>
+<h2>Draw a digit</h2>
+<div class="row">
+  <canvas id="pad" width="224" height="224"></canvas>
+  <div><div class="bars" id="bars"></div><div style="margin-top:28px"><button id="clear">Clear</button> <span id="pred" style="color:#fb923c;font-size:1.4rem;font-weight:700;margin-left:12px"></span></div></div>
+  <canvas id="thumb" width="28" height="28" style="width:112px;height:112px;image-rendering:pixelated"></canvas>
+</div>
+<p style="margin-top:14px">Forward: <code>MatMul</code>, <code>Add</code>, <code>Relu</code>, <code>MatMul</code>, <code>Add</code>, <code>Softmax</code>. The gradient of softmax with cross-entropy is one <code>Sub</code>. Backward: <code>Transpose</code>, <code>MatMul</code>, <code>ReduceSum</code>, <code>Greater</code>, <code>Where</code>, then <code>Mul</code> and <code>Sub</code> for the updates. The loss is <code>Log</code>, <code>Mul</code>, <code>ReduceSum</code>, <code>ReduceMean</code>. Each batch is shuffled and uploaded from JavaScript; the weights never leave the card. The data is the TensorFlow.js MNIST sprite, 10.7 MB, fetched from Google's public bucket: the first 20,000 images train, the next 2,000 test. A linear model reaches about 92%; the hidden layer does better.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [matmul, add, relu, softmax, sub, mul, greater, where, transpose, rsum, rmean, log, neg] =
+    await Promise.all(["MatMul", "Add", "Relu", "Softmax", "Sub", "Mul", "Greater", "Where", "Transpose", "ReduceSum", "ReduceMean", "Log", "Neg"].map(op));
+  const $ = (id) => document.getElementById(id);
+  const NTRAIN = 20000, NTEST = 2000, B = 128, LR = 0.3, D = 784;
+  const f32 = (a, shape) => ({ data: a instanceof Float32Array ? a : Float32Array.from(a), shape });
+  const keep = async (t) => (await add({ a: t, b: f32([0], [1]) }, { output: "gpu" })).c;
+  const zero = f32([0], [1]);
+
+  // --- data: the tfjs sprite, one 784-pixel row per image, plus one-hot labels ----------
+  say("fetching 10.7 MB of MNIST…");
+  const img = new Image(); img.crossOrigin = "anonymous";
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("could not load the MNIST sprite")); img.src = "https://storage.googleapis.com/learnjs-data/model-builder/mnist_images.png"; });
+  const labelsRaw = new Uint8Array(await (await fetch("https://storage.googleapis.com/learnjs-data/model-builder/mnist_labels_uint8")).arrayBuffer());
+  const NALL = NTRAIN + NTEST, pixels = new Float32Array(NALL * D);
+  const cv = document.createElement("canvas"); cv.width = D; cv.height = 5000; const cx = cv.getContext("2d", { willReadFrequently: true });
+  for (let r0 = 0; r0 < NALL; r0 += 5000) {
+    const rows = Math.min(5000, NALL - r0);
+    cx.drawImage(img, 0, r0, D, rows, 0, 0, D, rows);
+    const px = cx.getImageData(0, 0, D, rows).data;
+    for (let i = 0; i < rows * D; i++) pixels[r0 * D + i] = px[i * 4] / 255;
+    say(`decoding images… ${r0 + rows} / ${NALL}`);
+  }
+  const labelOf = (i) => labelsRaw.subarray(i * 10, i * 10 + 10).indexOf(1);
+  const Xtest = await keep(f32(pixels.subarray(NTRAIN * D, NALL * D), [NTEST, D]));
+  const ytest = Array.from({ length: NTEST }, (_, i) => labelOf(NTRAIN + i));
+
+  // --- model ---------------------------------------------------------------------------
+  const gauss = () => Math.sqrt(-2 * Math.log(Math.random() + 1e-12)) * Math.cos(6.283 * Math.random());
+  let P = {}, Hn, steps = 0, paused = false, gen = 0, hist = [], t0 = 0, busy = false;
+  async function init() {
+    gen++; while (busy) await new Promise((r) => setTimeout(r, 5));   // let the step in flight finish before its buffers go
+    steps = 0; hist = []; Hn = +$("hid").value;
+    for (const t of Object.values(P)) t.destroy?.();
+    P = { W1: await keep(f32(Float32Array.from({ length: D * Hn }, () => gauss() * Math.sqrt(2 / D)), [D, Hn])), b1: await keep(f32(new Float32Array(Hn), [1, Hn])),
+          W2: await keep(f32(Float32Array.from({ length: Hn * 10 }, () => gauss() * Math.sqrt(1 / Hn)), [Hn, 10])), b2: await keep(f32(new Float32Array(10), [1, 10])) };
+    t0 = performance.now();
+    loop().catch(fail);   // init owns the loop: the old loop sees the new gen and stops
+  }
+  async function forward(x, cpu) {
+    const z1 = await matmul({ a: x, b: P.W1 }, { output: "gpu" });
+    const z1b = await add({ a: z1.y, b: P.b1 }, { output: "gpu" });
+    const h = await relu({ x: z1b.c }, { output: "gpu" });
+    const z2 = await matmul({ a: h.y, b: P.W2 }, { output: "gpu" });
+    const z2b = await add({ a: z2.y, b: P.b2 }, { output: "gpu" });
+    const p = await softmax({ x: z2b.c }, cpu ? {} : { output: "gpu" });
+    z1.y.destroy(); z2.y.destroy(); z2b.c.destroy();
+    return { z1b: z1b.c, h: h.y, p: p.y };
+  }
+  function batch() {
+    const x = new Float32Array(B * D), y = new Float32Array(B * 10);
+    for (let b = 0; b < B; b++) { const i = Math.floor(Math.random() * NTRAIN); x.set(pixels.subarray(i * D, i * D + D), b * D); y[b * 10 + labelOf(i)] = 1; }
+    return { X: f32(x, [B, D]), Xt: null, Y: f32(y, [B, 10]) };
+  }
+  async function step() {
+    const { X, Y } = batch();
+    const { z1b, h, p } = await forward(X, false);
+    // loss = −mean over the batch of Σ y log p
+    const lp = await log({ x: p }, { output: "gpu" });
+    const yl = await mul({ a: lp.y, b: Y }, { output: "gpu" });
+    const rs = await rsum({ x: yl.c }, { attrs: { axes: [1], keepdims: 0 }, outputs: { y: { shape: [B], dtype: "float32" } }, output: "gpu" });
+    const ng = await neg({ x: rs.y }, { output: "gpu" });
+    const loss = await rmean({ x: ng.y }, { attrs: { axes: [0], keepdims: 0 }, outputs: { y: { shape: [1], dtype: "float32" } } });
+    // backward
+    const dz2 = await sub({ a: p, b: Y }, { output: "gpu" });
+    const ht = await transpose({ x: h }, { outputs: { y: { shape: [Hn, B], dtype: "float32" } }, output: "gpu" });
+    const dW2 = await matmul({ a: ht.y, b: dz2.c }, { output: "gpu" });
+    const db2 = await rsum({ x: dz2.c }, { attrs: { axes: [0], keepdims: 1 }, outputs: { y: { shape: [1, 10], dtype: "float32" } }, output: "gpu" });
+    const w2t = await transpose({ x: P.W2 }, { outputs: { y: { shape: [10, Hn], dtype: "float32" } }, output: "gpu" });
+    const dh = await matmul({ a: dz2.c, b: w2t.y }, { output: "gpu" });
+    const mask = await greater({ a: z1b, b: zero }, { output: "gpu" });
+    const dz1 = await where({ condition: mask.c, x: dh.y, y: zero }, { output: "gpu" });
+    const xt = await transpose({ x: X }, { outputs: { y: { shape: [D, B], dtype: "float32" } }, output: "gpu" });
+    const dW1 = await matmul({ a: xt.y, b: dz1.output }, { output: "gpu" });
+    const db1 = await rsum({ x: dz1.output }, { attrs: { axes: [0], keepdims: 1 }, outputs: { y: { shape: [1, Hn], dtype: "float32" } }, output: "gpu" });
+    const grads = { W1: dW1.y, b1: db1.y, W2: dW2.y, b2: db2.y };
+    for (const k of Object.keys(P)) {
+      const s = await mul({ a: grads[k], b: f32([LR / B], [1]) }, { output: "gpu" });
+      const nw = await sub({ a: P[k], b: s.c }, { output: "gpu" });
+      P[k].destroy(); s.c.destroy(); grads[k].destroy(); P[k] = nw.c;
+    }
+    [z1b, h, p, lp.y, yl.c, rs.y, ng.y, dz2.c, ht.y, w2t.y, dh.y, mask.c, dz1.output, xt.y].forEach((t) => t.destroy());
+    steps++; return loss.y.data[0];
+  }
+  async function testAccuracy() {
+    const { z1b, h, p } = await forward(Xtest, true); z1b.destroy(); h.destroy();
+    let ok = 0; for (let i = 0; i < NTEST; i++) { let best = 0; for (let k = 1; k < 10; k++) if (p.data[i * 10 + k] > p.data[i * 10 + best]) best = k; if (best === ytest[i]) ok++; }
+    return ok / NTEST;
+  }
+  let acc = null;
+  async function loop() {
+    const my = gen;
+    if (!paused) {
+      busy = true;
+      for (let i = 0; i < 5 && my === gen; i++) { const l = await step(); hist.push(l); }
+      busy = false;
+      if (my !== gen) return;
+      if (steps % 50 < 5) acc = await testAccuracy();
+      drawLoss();
+      $("steps").textContent = steps; $("ep").textContent = (steps * B / NTRAIN).toFixed(2);
+      $("lv").textContent = hist[hist.length - 1].toFixed(3); if (acc !== null) $("acc").textContent = (acc * 100).toFixed(1) + "%";
+      $("sps").textContent = (steps / ((performance.now() - t0) / 1000)).toFixed(0);
+      window.__result = { steps, loss: hist[hist.length - 1], acc, hidden: Hn };
+    }
+    if (my !== gen) return;
+    setTimeout(() => loop().catch(fail), 0);
+  }
+  function drawLoss() {
+    const c = $("loss"), g = c.getContext("2d"), W = c.width, H = c.height; g.fillStyle = "#0b1220"; g.fillRect(0, 0, W, H);
+    const sm = []; for (let i = 0; i < hist.length; i++) { let s = 0, k = 0; for (let j = Math.max(0, i - 9); j <= i; j++) { s += hist[j]; k++; } sm.push(s / k); }
+    const ymax = Math.min(3, Math.max(...sm) * 1.05);
+    g.strokeStyle = "#334155"; g.fillStyle = "#94a3b8"; g.font = "12px system-ui";
+    for (const v of [0.5, 1, 1.5, 2, 2.5]) if (v < ymax) { const y = H - v / ymax * H; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.fillText("loss " + v, W - 50, y - 3); }
+    g.strokeStyle = "#fb923c"; g.lineWidth = 2; g.beginPath();
+    sm.forEach((v, i) => { const x = i / Math.max(1, sm.length - 1) * W, y = H - Math.min(v, ymax) / ymax * H; i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.lineWidth = 1;
+  }
+
+  // --- the drawing pad --------------------------------------------------------------------
+  const pad = $("pad"), pg = pad.getContext("2d", { willReadFrequently: true }); let drawing = false;
+  const clearPad = () => { pg.fillStyle = "#0b1220"; pg.fillRect(0, 0, 224, 224); $("pred").textContent = ""; };
+  clearPad();
+  pad.onpointerdown = (e) => { drawing = true; pg.beginPath(); pg.moveTo(e.offsetX, e.offsetY); };
+  pad.onpointermove = (e) => { if (!drawing) return; pg.lineTo(e.offsetX, e.offsetY); pg.strokeStyle = "#fff"; pg.lineWidth = 18; pg.lineCap = pg.lineJoin = "round"; pg.stroke(); };
+  pad.onpointerup = pad.onpointerleave = () => { if (drawing) { drawing = false; classify().catch(fail); } };
+  $("clear").onclick = clearPad;
+  function padToMnist() {   // crop to the ink, scale the longer side to 20 px, centre by mass in 28×28, as MNIST does
+    const src = pg.getImageData(0, 0, 224, 224).data; let x0 = 224, y0 = 224, x1 = 0, y1 = 0;
+    for (let y = 0; y < 224; y++) for (let x = 0; x < 224; x++) if (src[(y * 224 + x) * 4] > 40) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    if (x1 < x0) return null;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1, s = 20 / Math.max(w, h), tw = Math.max(1, Math.round(w * s)), th = Math.max(1, Math.round(h * s));
+    const t = document.createElement("canvas"); t.width = t.height = 28; const tg = t.getContext("2d", { willReadFrequently: true });
+    tg.fillStyle = "#000"; tg.fillRect(0, 0, 28, 28); tg.imageSmoothingEnabled = true; tg.drawImage(pad, x0, y0, w, h, 0, 0, tw, th);
+    const d = tg.getImageData(0, 0, 28, 28).data, v = new Float32Array(784); let m = 0, mx = 0, my = 0;
+    for (let i = 0; i < 784; i++) { v[i] = d[i * 4] / 255; m += v[i]; mx += v[i] * (i % 28); my += v[i] * Math.floor(i / 28); }
+    const dx = Math.round(14 - mx / m), dy = Math.round(14 - my / m), out = new Float32Array(784);
+    for (let y = 0; y < 28; y++) for (let x = 0; x < 28; x++) { const sx = x - dx, sy = y - dy; if (sx >= 0 && sx < 28 && sy >= 0 && sy < 28) out[y * 28 + x] = v[sy * 28 + sx]; }
+    return out;
+  }
+  async function classify() {
+    const v = padToMnist(); if (!v) return;
+    const th = $("thumb").getContext("2d"), im = th.createImageData(28, 28); for (let i = 0; i < 784; i++) { im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v[i] * 255; im.data[i * 4 + 3] = 255; } th.putImageData(im, 0, 0);
+    const { z1b, h, p } = await forward(f32(v, [1, D]), true); z1b.destroy(); h.destroy();
+    const pr = Array.from(p.data), best = pr.indexOf(Math.max(...pr));
+    $("bars").innerHTML = pr.map((q, k) => `<div class="${k === best ? "top" : ""}" style="height:${Math.max(2, q * 100)}%"><span>${k}</span></div>`).join("");
+    $("pred").textContent = `${best}  (${(pr[best] * 100).toFixed(0)}%)`;
+    window.__pred = { best, probs: pr };
+  }
+  $("restart").onclick = () => init().catch(fail); $("hid").onchange = () => init().catch(fail);
+  $("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "Resume" : "Pause"; };
+  window.__classify = classify; window.__pixels = pixels; window.__labelOf = labelOf;   // test hooks
+  await init(); say("training");
+} catch (e) { fail(e); }
+</script>
+</html>

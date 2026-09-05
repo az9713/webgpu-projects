@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>A quantum wavepacket tunnelling through a barrier</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;background:#000;cursor:crosshair;image-rendering:auto}
+  button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  input[type=range]{width:140px;padding:0;vertical-align:middle}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:230px;font-size:.9rem;align-self:flex-start}
+  .stat b{color:#2dd4bf;font-weight:600;font-size:1.05rem}
+  .stat div{margin-bottom:6px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>A quantum wavepacket tunnelling through a barrier</h1>
+<p>A packet runs into a barrier. Part of it bounces and part of it appears on the far side. Colour is the phase of the wave function and brightness is the probability. Drag with the left button to draw more barrier, with the right button to erase it. The barrier height is below the packet's own energy scale and above it on the slider, so you can watch tunnelling turn into reflection.</p>
+<div class="row" style="margin-bottom:10px">
+  <label>grid <select id="size"><option>128</option><option selected>256</option><option>512</option></select></label>
+  <label>barrier height V<sub>0</sub> <input id="v0" type="range" min="0" max="1.5" step="0.05" value="0.6"> <b id="v0v">0.60</b></label>
+  <label>momentum k<sub>0</sub> <input id="k0" type="range" min="0.3" max="1.5" step="0.05" value="0.9"> <b id="k0v">0.90</b></label>
+  <button id="reset">Launch again</button><button id="pause">Pause</button><button id="clearV">Clear barrier</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row" style="align-items:flex-start">
+  <canvas id="c" width="512" height="512"></canvas>
+  <div class="stat">
+    <div>kinetic energy k<sub>0</sub><sup>2</sup>/2 <b id="E">–</b></div>
+    <div>probability right of centre <b id="pr">–</b></div>
+    <div>probability still in the box <b id="norm">–</b></div>
+    <div>steps <b id="steps">0</b> &nbsp; steps / s <b id="sps">–</b></div>
+    <div>kernel calls per step <b>17</b></div>
+    <div style="color:#94a3b8;margin-top:8px">grey: the barrier<br>hue: phase, brightness: |&psi;|<sup>2</sup><br>the left and right edges absorb, so what leaves is gone</div>
+  </div>
+</div>
+<p style="margin-top:14px">The split-step method alternates a multiply in position space with a multiply in frequency space, so it is a <code>DFT</code> sandwich. Each step: multiply by exp(&minus;iV&Delta;t), transform, multiply by exp(&minus;ik<sup>2</sup>&Delta;t/2), transform back. A complex multiply on interleaved (real, imaginary) pairs is <code>Mul</code>, a <code>Gather</code> that swaps the pair, <code>Mul</code> and <code>Add</code>. The two-dimensional transform is <code>DFT</code> along one axis, <code>Transpose</code>, <code>DFT</code>, <code>Transpose</code>, because the fast path runs along one axis only. The phase tables come from <code>Cos</code>, <code>Sin</code>, <code>Neg</code> and <code>Concat</code> when the barrier changes. Units: &hbar; = m = 1, one grid cell = 1, &Delta;t = 0.4. The left and right edges carry a smooth absorbing mask, one more <code>Mul</code>, so the reflected part does not wrap round the periodic box and arrive on the far side. Total probability is read back every frame: it stays at 1.0000 until something reaches an edge, which is the check that the transform pair is unitary.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [dft, transpose, mul, add, gather, cos, sin, neg, concat] = await Promise.all(["DFT", "Transpose", "Mul", "Add", "Gather", "Cos", "Sin", "Neg", "Concat"].map(op));
+  const $ = (id) => document.getElementById(id), c = $("c"), g = c.getContext("2d");
+  const DT = 0.4;
+  let N, V, psi = null, VC = null, VD = null, KC = null, KD = null, steps = 0, paused = false, gen = 0, t0 = 0, n0 = 0, needV = false, busy = false, MASK = null, peak0 = 0;
+  const swapIdx = { data: new Int32Array([1, 0]), shape: [2] };
+  const f32 = (a, shape) => ({ data: a, shape });
+  const keep = async (t) => (await add({ a: t, b: f32(new Float32Array([0]), [1]) }, { output: "gpu" })).c;
+
+  // exp(iθ) as two interleaved tables: C = [cosθ, cosθ], D = [−sinθ, sinθ], so that
+  // ψ·exp(iθ) = ψ·C + swap(ψ)·D on (re, im) pairs
+  async function phaseTables(theta) {
+    const th = f32(theta, [N, N, 1]);
+    const cs = await cos({ x: th }, { output: "gpu" }), sn = await sin({ x: th }, { output: "gpu" });
+    const ns = await neg({ x: sn.y }, { output: "gpu" });
+    const C = await concat({ a: cs.y, b: cs.y }, { attrs: { axis: 2 }, output: "gpu" });
+    const D = await concat({ a: ns.y, b: sn.y }, { attrs: { axis: 2 }, output: "gpu" });
+    [cs.y, sn.y, ns.y].forEach((t) => t.destroy());
+    return [C.c, D.c];
+  }
+  async function rebuildV() {
+    const theta = new Float32Array(N * N); for (let i = 0; i < N * N; i++) theta[i] = -V[i] * DT;
+    VC?.destroy(); VD?.destroy(); [VC, VD] = await phaseTables(theta);
+  }
+  async function rebuildK() {
+    const theta = new Float32Array(N * N);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const kx = 2 * Math.PI * (i < N / 2 ? i : i - N) / N, ky = 2 * Math.PI * (j < N / 2 ? j : j - N) / N; theta[j * N + i] = -(kx * kx + ky * ky) * DT / 2; }
+    KC?.destroy(); KD?.destroy(); [KC, KD] = await phaseTables(theta);
+  }
+  async function launch() {
+    gen++; while (busy) await new Promise((r) => setTimeout(r, 5));   // let the step in flight finish before its buffers go
+    steps = 0; N = +$("size").value; c.width = c.height = Math.max(N, 512) > 512 ? N : 512;
+    const k0 = +$("k0").value, sig = N / 14, x0 = N / 4, y0 = N / 2;
+    const p = new Float32Array(N * N * 2); let norm = 0;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const e = Math.exp(-((i - x0) ** 2 + (j - y0) ** 2) / (2 * sig * sig)); norm += e * e; p[(j * N + i) * 2] = e * Math.cos(k0 * i); p[(j * N + i) * 2 + 1] = e * Math.sin(k0 * i); }
+    const s = 1 / Math.sqrt(norm); for (let i = 0; i < p.length; i++) p[i] *= s;
+    psi?.destroy(); psi = await keep(f32(p, [N, N, 2]));
+    if (!V || V.length !== N * N) { V = new Float32Array(N * N); defaultBarrier(); }
+    await rebuildK(); await rebuildV();
+    const m = new Float32Array(N * N); const edge = 14;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const d = Math.min(i, N - 1 - i); m[j * N + i] = d >= edge ? 1 : Math.sin(d / edge * Math.PI / 2) ** 2; }
+    MASK?.destroy(); MASK = await keep(f32(m, [N, N, 1]));
+    $("E").textContent = (k0 * k0 / 2).toFixed(3); t0 = performance.now(); n0 = 0;
+    frame().catch(fail);   // launch owns the loop: the old loop sees the new gen and stops
+  }
+  function defaultBarrier() { const v0 = +$("v0").value; V.fill(0); for (let j = 0; j < N; j++) for (let i = Math.floor(N / 2) - 2; i < Math.floor(N / 2) + 2; i++) V[j * N + i] = v0; }
+
+  async function cmul(x, C, D) {   // x·exp(iθ) on interleaved pairs, four calls
+    const a = await mul({ a: x, b: C }, { output: "gpu" });
+    const sw = await gather({ data: x, indices: swapIdx }, { attrs: { axis: 2 }, output: "gpu" });
+    const b = await mul({ a: sw.y ?? sw.output, b: D }, { output: "gpu" });
+    const r = await add({ a: a.c, b: b.c }, { output: "gpu" });
+    [a.c, sw.y ?? sw.output, b.c].forEach((t) => t.destroy());
+    return r.c;
+  }
+  async function fft2(x, inverse) {   // DFT along axis 1, transpose, DFT along axis 1, transpose back
+    const o = { outputs: { output: { shape: [N, N, 2], dtype: "float32" } }, attrs: { inverse: inverse ? 1 : 0 }, output: "gpu" };
+    const t = { attrs: { perm: [1, 0, 2] }, outputs: { y: { shape: [N, N, 2], dtype: "float32" } }, output: "gpu" };
+    const a = await dft({ input: x }, o);
+    const b = await transpose({ x: a.output }, t);
+    const cc = await dft({ input: b.y }, o);
+    const d = await transpose({ x: cc.output }, t);
+    [a.output, b.y, cc.output].forEach((tt) => tt.destroy());
+    return d.y;
+  }
+  async function step() {
+    const p1 = await cmul(psi, VC, VD);
+    const f = await fft2(p1, false);
+    const f2 = await cmul(f, KC, KD);
+    const p2 = await fft2(f2, true);
+    const p3 = await mul({ a: p2, b: MASK }, { output: "gpu" });          // absorb at the left and right edges
+    [psi, p1, f, f2, p2].forEach((t) => t.destroy()); psi = p3.c; steps++;
+  }
+  async function frame() {
+    const my = gen;
+    if (needV) { needV = false; await rebuildV(); }
+    busy = true;
+    if (!paused) for (let i = 0; i < 3 && my === gen; i++) await step();
+    busy = false;
+    if (my !== gen) return;
+    const data = (await add({ a: psi, b: f32(new Float32Array([0]), [1]) })).c.data;    // the one readback per frame
+    draw(data);
+    setTimeout(() => frame().catch(fail), 0);
+  }
+  function draw(d) {
+    const img = g.createImageData(N, N), px = img.data; let norm = 0, right = 0, maxp = 0;
+    for (let i = 0; i < N * N; i++) { const p = d[i * 2] ** 2 + d[i * 2 + 1] ** 2; norm += p; if (i % N >= N / 2) right += p; if (p > maxp) maxp = p; }
+    if (steps <= 3 || peak0 === 0) peak0 = maxp;          // brightness is fixed to the launch peak, so absorbed probability fades instead of rescaling
+    const scale = 1 / (peak0 * 0.6);
+    for (let i = 0; i < N * N; i++) {
+      const re = d[i * 2], im = d[i * 2 + 1], p = Math.min(1, (re * re + im * im) * scale), h = (Math.atan2(im, re) / Math.PI + 1) / 2;
+      const k = h * 6, r = Math.max(0, Math.min(1, Math.abs(k - 3) - 1)), gg = Math.max(0, Math.min(1, 2 - Math.abs(k - 2))), b = Math.max(0, Math.min(1, 2 - Math.abs(k - 4)));
+      const v = Math.sqrt(p) * 255, bar = V[i] > 0 ? 70 : 0;
+      px[i * 4] = Math.min(255, r * v + bar); px[i * 4 + 1] = Math.min(255, gg * v + bar); px[i * 4 + 2] = Math.min(255, b * v + bar); px[i * 4 + 3] = 255;
+    }
+    const tmp = document.createElement("canvas"); tmp.width = tmp.height = N; tmp.getContext("2d").putImageData(img, 0, 0);
+    g.imageSmoothingEnabled = false; g.drawImage(tmp, 0, 0, c.width, c.height);
+    $("pr").textContent = (right / norm * 100).toFixed(1) + "%"; $("norm").textContent = norm.toFixed(4); $("steps").textContent = steps;
+    const dt = (performance.now() - t0) / 1000; if (dt > 0.5) $("sps").textContent = ((steps - n0) / dt).toFixed(0);
+    window.__result = { N, steps, norm, right: right / norm };
+  }
+  // drawing the barrier
+  let button = -1, dirtyV = false;
+  const cell = (e) => { const r = c.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / r.width * N), Math.floor((e.clientY - r.top) / r.height * N)]; };
+  const paintV = (e) => { const [cx, cy] = cell(e), v0 = +$("v0").value; for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) { const x = cx + i, y = cy + j; if (x >= 0 && x < N && y >= 0 && y < N && i * i + j * j <= 9) V[y * N + x] = button === 2 ? 0 : v0; } dirtyV = true; };
+  c.oncontextmenu = (e) => e.preventDefault();
+  c.onpointerdown = (e) => { button = e.button; paintV(e); };
+  c.onpointermove = (e) => { if (button >= 0) paintV(e); };
+  c.onpointerup = c.onpointerleave = () => { button = -1; if (dirtyV) { dirtyV = false; needV = true; } };
+  $("v0").oninput = () => { $("v0v").textContent = (+$("v0").value).toFixed(2); const v0 = +$("v0").value; for (let i = 0; i < N * N; i++) if (V[i] > 0) V[i] = v0; needV = true; };
+  $("k0").oninput = () => { $("k0v").textContent = (+$("k0").value).toFixed(2); };
+  $("k0").onchange = () => { $("k0v").textContent = (+$("k0").value).toFixed(2); launch().catch(fail); };
+  $("size").onchange = () => { V = null; launch().catch(fail); };
+  $("reset").onclick = () => launch().catch(fail);
+  $("clearV").onclick = () => { V.fill(0); needV = true; };
+  $("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "Resume" : "Pause"; };
+  await launch(); say("running");
+} catch (e) { fail(e); }
+</script>
+</html>

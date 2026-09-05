@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>An untrained neural network as a painting machine</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;max-width:100%}
+  button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>An untrained neural network as a painting machine</h1>
+<p>Every pixel's coordinates go into a small network with random weights that nobody trained. The three outputs are read as red, green and blue. Re-roll the seed for a different painting. The first layer is a million-row matrix multiply at 1024&times;1024, and it is a thin, wide shape, so it does far less arithmetic per row than a square one.</p>
+<div class="row">
+  <label>size <select id="size"><option>256</option><option selected>512</option><option>1024</option></select></label>
+  <label>seed <input id="seed" type="number" value="7" style="width:80px"></label>
+  <label>hidden width <select id="hid"><option>8</option><option selected>24</option><option>48</option></select></label>
+  <label>layers <select id="layers"><option>2</option><option>4</option><option selected>6</option><option>8</option></select></label>
+  <label>frequency <input id="freq" type="range" min="0.5" max="8" step="0.5" value="5" style="width:120px;padding:0"></label>
+  <button id="roll">Re-roll</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<canvas id="c" width="512" height="512"></canvas>
+<p style="margin-top:14px">Input per pixel: x, y in [&minus;1, 1] and the distance from the centre. Layer 1 is <code>Sin</code> of a random projection, scaled by the frequency slider. The hidden layers are <code>MatMul</code>, <code>Add</code>, <code>Tanh</code>. The output is <code>Sigmoid</code>. Everything after the coordinate upload stays on the card until the final colour readback.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [matmul, add, sin, tanh, sigmoid] = await Promise.all(["MatMul", "Add", "Sin", "Tanh", "Sigmoid"].map(op));
+  say("ready");
+
+  // seeded Gaussian weights, so a seed number reproduces its painting
+  function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const gauss = (r) => Math.sqrt(-2 * Math.log(r() + 1e-12)) * Math.cos(6.283185 * r());
+  const mat = (r, rows, cols, scale) => { const m = new Float32Array(rows * cols); for (let i = 0; i < m.length; i++) m[i] = gauss(r) * scale; return { data: m, shape: [rows, cols] }; };
+
+  const $ = (id) => document.getElementById(id);
+  let coords = null, coordsN = 0;
+  async function paint() {
+    const N = +$("size").value, H = +$("hid").value, L = +$("layers").value, seed = +$("seed").value, freq = +$("freq").value;
+    const c = $("c"); c.width = c.height = N;
+    const t0 = performance.now();
+    if (coordsN !== N) {                            // [N*N, 3] coordinates, uploaded once per size and kept resident
+      const x = new Float32Array(N * N * 3);
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const p = (j * N + i) * 3, u = i / (N - 1) * 2 - 1, v = j / (N - 1) * 2 - 1; x[p] = u; x[p + 1] = v; x[p + 2] = Math.hypot(u, v); }
+      coords?.destroy(); coords = (await add({ a: { data: x, shape: [N * N, 3] }, b: { data: new Float32Array([0]), shape: [1] } }, { output: "gpu" })).c; coordsN = N;
+    }
+    const r = rng(seed);
+    const held = [];
+    let h = coords;
+    // layer 1: sin of a random projection, the frequency sets how busy the picture is
+    let z = (await matmul({ a: h, b: mat(r, 3, H, freq) }, { output: "gpu" })).y; held.push(z);
+    z = (await add({ a: z, b: mat(r, 1, H, 1) }, { output: "gpu" })).c; held.push(z);
+    h = (await sin({ x: z }, { output: "gpu" })).y; held.push(h);
+    for (let l = 1; l < L; l++) {
+      z = (await matmul({ a: h, b: mat(r, H, H, 1 / Math.sqrt(H) * 1.6) }, { output: "gpu" })).y; held.push(z);
+      z = (await add({ a: z, b: mat(r, 1, H, 0.3) }, { output: "gpu" })).c; held.push(z);
+      h = (await tanh({ x: z }, { output: "gpu" })).y; held.push(h);
+    }
+    z = (await matmul({ a: h, b: mat(r, H, 3, 1 / Math.sqrt(H) * 2.5) }, { output: "gpu" })).y; held.push(z);
+    z = (await add({ a: z, b: mat(r, 1, 3, 0.3) }, { output: "gpu" })).c; held.push(z);
+    const rgb = (await sigmoid({ x: z })).y.data;      // the one readback: N*N*3 floats
+    held.forEach((t) => t.destroy());
+    const img = c.getContext("2d").createImageData(N, N), d = img.data;
+    for (let i = 0, p = 0; i < N * N; i++, p += 4) { d[p] = rgb[i * 3] * 255; d[p + 1] = rgb[i * 3 + 1] * 255; d[p + 2] = rgb[i * 3 + 2] * 255; d[p + 3] = 255; }
+    c.getContext("2d").putImageData(img, 0, 0);
+    const ms = performance.now() - t0;
+    window.__result = { N, H, L, seed, ms: +ms.toFixed(1), calls: 3 * L + 3, mean: [0, 1, 2].map((k) => { let s = 0; for (let i = k; i < rgb.length; i += 3) s += rgb[i]; return +(s / (N * N)).toFixed(3); }) };
+    say(`${N}×${N}, ${L} layers of width ${H}, seed ${seed}: ${ms.toFixed(0)} ms for ${3 * L + 3} kernel calls and one readback`);
+  }
+  let busy = false, again = false;
+  const go = () => { if (busy) { again = true; return; } busy = true; paint().catch(fail).finally(() => { busy = false; if (again) { again = false; go(); } }); };
+  for (const id of ["size", "seed", "hid", "layers", "freq"]) $(id).oninput = go;
+  $("roll").onclick = () => { $("seed").value = Math.floor(Math.random() * 100000); go(); };
+  go();
+} catch (e) { fail(e); }
+</script>
+</html>

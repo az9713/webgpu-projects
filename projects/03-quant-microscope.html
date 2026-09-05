@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Quantisation error microscope</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1180px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;image-rendering:pixelated;width:256px;height:256px;display:block}
+  button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px;width:256px}
+  .panel h3{margin:0 0 6px;font-size:.95rem;color:#e2e8f0}
+  .panel .m{font-size:.8rem;color:#94a3b8;margin-top:6px;line-height:1.5}
+  .panel .m b{color:#2dd4bf;font-weight:600}
+  h2{color:#fb923c;font-size:1rem;margin:18px 0 8px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Quantisation error microscope</h1>
+<p>One weight matrix, 256&times;256, shown at full precision, 8 bits, 4 bits and 2 bits. Under each sits its size. Below them, the error image between the original and each version, all on one shared colour scale that saturates at the 99th percentile of the 2-bit error. The damage is not spread evenly: the outlier channels set the scale, and everything else pays for it.</p>
+<div class="row" style="margin-bottom:10px">
+  <label>scale <select id="mode"><option value="tensor">one scale for the whole matrix</option><option value="row">one scale per row</option></select></label>
+  <label>matrix <select id="shape"><option value="outlier">outlier channels, like a transformer weight</option><option value="gauss">plain Gaussian</option></select></label>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row" id="vals"></div>
+<h2>Absolute error, shared scale</h2>
+<div class="row" id="errs"></div>
+<p style="margin-top:14px">Pipeline per panel: <code>QuantizeLinear</code> to int8 with scale = max|w| / q<sub>max</sub>, then <code>DequantizeLinear</code>, then <code>Sub</code>, <code>Abs</code>, <code>ReduceMax</code> and <code>ReduceMean</code> for the numbers. q<sub>max</sub> is 127, 7 and 1, so the 4-bit and 2-bit panels are symmetric grids of 15 and 3 levels. The kernels only store int8, so the 4-bit and 2-bit sizes are arithmetic, not measured buffers. Value panels clip the colour range at three standard deviations, or the outliers would hide everything else.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [quant, dequant, sub, abs, rmax, rmean] = await Promise.all(["QuantizeLinear", "DequantizeLinear", "Sub", "Abs", "ReduceMax", "ReduceMean"].map(op));
+  say("ready");
+  const N = 256, $ = (id) => document.getElementById(id);
+
+  function makeW(kind) {   // a synthetic weight: small Gaussian, plus smooth structure and a few outlier columns
+    let a = 12345; const r = () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; };
+    const g = () => Math.sqrt(-2 * Math.log(r() + 1e-12)) * Math.cos(6.283 * r());
+    const w = new Float32Array(N * N);
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      let v = 0.02 * g() + 0.03 * Math.sin(i / 17) * Math.cos(j / 23);
+      if (kind === "outlier") { if (j % 61 === 5) v *= 20; if (i % 97 === 40) v *= 8; if (r() < 0.0005) v = (r() - 0.5) * 3; }
+      w[i * N + j] = v;
+    }
+    return w;
+  }
+
+  async function run() {
+    const mode = $("mode").value, W = makeW($("shape").value);
+    const Wt = { data: W, shape: [N, N] };
+    let absmax;
+    if (mode === "tensor") { let m = 0; for (const v of W) m = Math.max(m, Math.abs(v)); absmax = [m]; }
+    else { absmax = new Array(N).fill(0); for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) absmax[i] = Math.max(absmax[i], Math.abs(W[i * N + j])); }
+    const panels = [{ bits: 32, data: W, bytes: N * N * 4 }];
+    for (const bits of [8, 4, 2]) {
+      const qmax = 2 ** (bits - 1) - 1;
+      const scale = { data: Float32Array.from(absmax, (m) => Math.max(m, 1e-12) / qmax), shape: mode === "tensor" ? [] : [N] };
+      const zp = { data: new Int8Array(mode === "tensor" ? 1 : N), shape: scale.shape };
+      const q = await quant({ x: Wt, y_scale: scale, y_zero_point: zp }, { attrs: { axis: 0 }, outputs: { y: { shape: [N, N], dtype: "int8" } }, output: "gpu" });
+      const d = await dequant({ x: q.y, x_scale: scale, x_zero_point: zp }, { attrs: { axis: 0 }, outputs: { y: { shape: [N, N], dtype: "float32" } }, output: "gpu" });
+      const e = await sub({ a: Wt, b: d.y }, { output: "gpu" });
+      const ae = await abs({ x: e.c }, { output: "gpu" });
+      const mx = await rmax({ x: ae.y }, { attrs: { keepdims: 0 }, outputs: { y: { shape: [], dtype: "float32" } } });
+      const mn = await rmean({ x: ae.y }, { attrs: { keepdims: 0 }, outputs: { y: { shape: [], dtype: "float32" } } });
+      const deq = await dequant({ x: q.y, x_scale: scale, x_zero_point: zp }, { attrs: { axis: 0 }, outputs: { y: { shape: [N, N], dtype: "float32" } } });
+      const err = await abs({ x: e.c });
+      [q.y, d.y, e.c, ae.y].forEach((t) => t.destroy());
+      panels.push({ bits, data: deq.y.data, err: err.y.data, maxErr: mx.y.data[0], meanErr: mn.y.data[0], levels: 2 * qmax + 1,
+        bytes: N * N * bits / 8 + (mode === "row" ? N * 4 : 4) });
+    }
+    draw(panels, W);
+    window.__result = panels.map((p) => ({ bits: p.bits, bytes: p.bytes, maxErr: p.maxErr, meanErr: p.meanErr }));
+    say(`${mode === "tensor" ? "one scale" : "per-row scales"}: max error at 8 / 4 / 2 bits = ${panels.slice(1).map((p) => p.maxErr.toPrecision(3)).join(" / ")}`);
+  }
+
+  function draw(panels, W) {
+    let s = 0; for (const v of W) s += v * v; const sd = Math.sqrt(s / W.length), lim = 3 * sd;
+    const sorted = Float32Array.from(panels[3].err).sort(); const emax = sorted[Math.floor(sorted.length * 0.99)];   // 99th percentile of the 2-bit error, or one outlier sets the whole scale
+    const kb = (b) => b >= 1048576 ? (b / 1048576).toFixed(2) + " MB" : (b / 1024).toFixed(1) + " KB";
+    $("vals").innerHTML = panels.map((p, i) => `<div class="panel"><h3>${p.bits === 32 ? "float32, original" : p.bits + "-bit, " + p.levels + " levels"}</h3><canvas id="v${i}" width="${N}" height="${N}"></canvas><div class="m">size <b>${kb(p.bytes)}</b>${p.bits < 32 ? `<br>max error <b>${p.maxErr.toPrecision(3)}</b> &nbsp; mean <b>${p.meanErr.toPrecision(3)}</b>` : `<br>&plusmn;3&sigma; = &plusmn;${lim.toPrecision(3)} shown`}</div></div>`).join("");
+    $("errs").innerHTML = panels.slice(1).map((p, i) => `<div class="panel"><h3>|w &minus; w<sub>${p.bits}-bit</sub>|</h3><canvas id="e${i}" width="${N}" height="${N}"></canvas><div class="m">black 0 &rarr; yellow ${emax.toPrecision(3)}, the 99th percentile at 2 bits; brighter is clipped</div></div>`).join("");
+    panels.forEach((p, i) => paint($("v" + i), p.data, (v) => { const t = Math.max(-1, Math.min(1, v / lim)); return t < 0 ? [96 + 60 * t, 165 + 100 * t, 250] : [251, 146 + 100 * (1 - t), 60 + 180 * (1 - t)]; }));
+    panels.slice(1).forEach((p, i) => paint($("e" + i), p.err, (v) => { const t = Math.min(1, v / emax); return [255 * Math.min(1, t * 1.8), 255 * Math.max(0, t * 1.4 - 0.4), 120 * Math.max(0, 1 - t * 2.5) + 255 * Math.max(0, t - 0.8) * 5]; }));
+  }
+  function paint(c, data, cmap) {
+    const g = c.getContext("2d"), img = g.createImageData(N, N), d = img.data;
+    for (let i = 0; i < N * N; i++) { const [r, gg, b] = cmap(data[i]); d[i * 4] = r; d[i * 4 + 1] = gg; d[i * 4 + 2] = b; d[i * 4 + 3] = 255; }
+    g.putImageData(img, 0, 0);
+  }
+  $("mode").onchange = $("shape").onchange = () => run().catch(fail);
+  run().catch(fail);
+} catch (e) { fail(e); }
+</script>
+</html>

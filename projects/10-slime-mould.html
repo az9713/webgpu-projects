@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Slime mould: a million agents that build networks</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;background:#000}
+  button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  input[type=range]{width:110px;padding:0;vertical-align:middle}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:220px;font-size:.9rem;align-self:flex-start}
+  .stat b{color:#2dd4bf;font-weight:600;font-size:1.05rem}
+  .stat div{margin-bottom:6px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Slime mould: a million agents that build networks</h1>
+<p>Each agent moves, leaves a trail, and steers toward the strongest trail ahead of it. Within seconds they organise into veins and webs that look like a living organism. Sensing ahead of every agent is one sampling call, and trail decay is one blur. Two kernels produce the emergent behaviour; the rest is bookkeeping.</p>
+<div class="row" style="margin-bottom:10px">
+  <label>agents <select id="agents"><option>50000</option><option selected>250000</option><option>1000000</option></select></label>
+  <label>map <select id="map"><option>256</option><option selected>512</option></select></label>
+  <label>sensor angle <input id="sa" type="range" min="10" max="80" step="5" value="35"> <b id="sav">35&deg;</b></label>
+  <label>sensor distance <input id="sd" type="range" min="3" max="25" step="1" value="9"> <b id="sdv">9</b></label>
+  <label>decay <input id="decay" type="range" min="0.80" max="0.99" step="0.01" value="0.90"> <b id="decayv">0.90</b></label>
+  <button id="reset">Restart</button><button id="pause">Pause</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row" style="align-items:flex-start">
+  <canvas id="c" width="512" height="512"></canvas>
+  <div class="stat">
+    <div>steps <b id="steps">0</b> &nbsp; steps / s <b id="sps">–</b></div>
+    <div>kernel calls per step <b id="calls">–</b></div>
+    <div>trail total <b id="tot">–</b></div>
+    <div style="color:#94a3b8;margin-top:8px">left, centre and right sensors read the trail<br>turn toward the strongest, with a little noise<br>move one cell, deposit, blur and decay</div>
+  </div>
+</div>
+<p style="margin-top:14px">Per step: <code>Concat</code> the three sensor angles, <code>Cos</code> and <code>Sin</code>, <code>Mul</code> and <code>Add</code> for the sensor positions, <code>Transpose</code> into the sampling layout, <code>GridSample</code> to read the trail at all three sensors of every agent at once, <code>Split</code>, <code>Greater</code> and <code>And</code> to decide, <code>Where</code> to turn, <code>Add</code> a noise buffer, <code>Mod</code> to wrap the map, <code>Floor</code>, <code>Cast</code>, <code>Mul</code> and <code>Add</code> to build a flat integer index, <code>Reshape</code> and <code>ScatterElements</code> with <code>reduction: "add"</code> to deposit (ScatterND wants int64 indices, which no kernel can produce on the card), and <code>Conv</code> with a 3&times;3 kernel scaled by the decay to blur and fade. There is no random-number kernel among the 207, so eight noise buffers are uploaded once and cycled. Positions, headings and the trail never leave the card; the trail is read back once per frame to draw.</p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [concat, cos, sin, mul, add, sub, transpose, gridsample, split, greater, and, where, mod, floor, cast, scatter, reshape, conv] =
+    await Promise.all(["Concat", "Cos", "Sin", "Mul", "Add", "Sub", "Transpose", "GridSample", "Split", "Greater", "And", "Where", "Mod", "Floor", "Cast", "ScatterElements", "Reshape", "Conv"].map(op));
+  const $ = (id) => document.getElementById(id), c = $("c"), g = c.getContext("2d");
+  const f32 = (a, shape) => ({ data: a instanceof Float32Array ? a : Float32Array.from(a), shape });
+  const keep = async (t) => (await add({ a: t, b: f32([0], [1]) }, { output: "gpu" })).c;
+  const one = (v) => f32([v], [1]);
+  let A, M, px, py, head, trail, noise = [], steps = 0, paused = false, gen = 0, t0 = 0, busy = false, ones, blurW;
+  const SPEED = 1.0, TURN = 0.45, JITTER = 0.35;   // the web coarsens into a few thick veins over a minute; more noise and faster decay slow that down
+
+  async function reset() {
+    gen++; while (busy) await new Promise((r) => setTimeout(r, 5));
+    A = +$("agents").value; M = +$("map").value; steps = 0; c.width = c.height = 512;
+    for (const t of [px, py, head, trail, ones, blurW, ...noise]) t?.destroy?.();
+    const r = () => Math.random();
+    // start on a disc with random headings; the disc edge is where the first veins form
+    const ang0 = Float32Array.from({ length: A }, () => r() * 6.2832), rad0 = Float32Array.from({ length: A }, () => 0.42 * M * Math.sqrt(r()));
+    px = await keep(f32(Float32Array.from({ length: A }, (_, i) => M / 2 + rad0[i] * Math.cos(ang0[i])), [1, 1, A, 1]));
+    py = await keep(f32(Float32Array.from({ length: A }, (_, i) => M / 2 + rad0[i] * Math.sin(ang0[i])), [1, 1, A, 1]));
+    head = await keep(f32(Float32Array.from({ length: A }, () => r() * 6.2832), [1, 1, A, 1]));
+    trail = await keep(f32(new Float32Array(M * M), [1, 1, M, M]));
+    ones = await keep(f32(new Float32Array(A).fill(1), [1, 1, A, 1]));
+    noise = []; for (let k = 0; k < 8; k++) noise.push(await keep(f32(Float32Array.from({ length: A }, () => (r() - 0.5) * 2 * JITTER), [1, 1, A, 1])));
+    blurW = null; t0 = performance.now();
+    frame().catch(fail);
+  }
+  async function step() {
+    const SA = +$("sa").value * Math.PI / 180, SD = +$("sd").value, decay = +$("decay").value;
+    const held = [], h = (t) => { held.push(t); return t; };
+    // 1. three sensor angles per agent, then the sensor positions in map cells
+    const hl = h((await add({ a: head, b: one(SA) }, { output: "gpu" })).c), hr = h((await sub({ a: head, b: one(SA) }, { output: "gpu" })).c);
+    const ang = h((await concat({ a: hl, b: head, d: hr }, { attrs: { axis: 3 }, output: "gpu" })).c);              // [1,1,A,3]
+    const ca = h((await cos({ x: ang }, { output: "gpu" })).y), sa = h((await sin({ x: ang }, { output: "gpu" })).y);
+    const sx = h((await add({ a: px, b: h((await mul({ a: ca, b: one(SD) }, { output: "gpu" })).c) }, { output: "gpu" })).c);
+    const sy = h((await add({ a: py, b: h((await mul({ a: sa, b: one(SD) }, { output: "gpu" })).c) }, { output: "gpu" })).c);
+    // 2. to GridSample coordinates in [-1, 1], laid out as [1, A, 3, 2]
+    const gx = h((await sub({ a: h((await mul({ a: sx, b: one(2 / M) }, { output: "gpu" })).c), b: one(1) }, { output: "gpu" })).c);
+    const gy = h((await sub({ a: h((await mul({ a: sy, b: one(2 / M) }, { output: "gpu" })).c), b: one(1) }, { output: "gpu" })).c);
+    const gxy = h((await concat({ a: gx, b: gy }, { attrs: { axis: 1 }, output: "gpu" })).c);                        // [1,2,A,3]
+    const grid = h((await transpose({ x: gxy }, { attrs: { perm: [0, 2, 3, 1] }, outputs: { y: { shape: [1, A, 3, 2], dtype: "float32" } }, output: "gpu" })).y);
+    const s = h((await gridsample({ x: trail, grid }, { attrs: { mode: "linear", padding_mode: "zeros", align_corners: 0 }, outputs: { y: { shape: [1, 1, A, 3], dtype: "float32" } }, output: "gpu" })).y);
+    // 3. steer: keep going if the centre is strongest, else turn toward the stronger side, plus noise
+    const sp = await split({ input: s, split: { data: new Uint32Array([1, 1, 1]), shape: [3] } }, { attrs: { axis: 3 }, outputs: { y0: { shape: [1, 1, A, 1], dtype: "float32" }, y1: { shape: [1, 1, A, 1], dtype: "float32" }, y2: { shape: [1, 1, A, 1], dtype: "float32" } }, output: "gpu" });
+    const L = h(sp.y0), C = h(sp.y1), R = h(sp.y2);
+    const cl = h((await greater({ a: C, b: L }, { output: "gpu" })).c), cr = h((await greater({ a: C, b: R }, { output: "gpu" })).c), lr = h((await greater({ a: L, b: R }, { output: "gpu" })).c);
+    const keepOn = h((await and({ a: cl, b: cr }, { output: "gpu" })).c);
+    const turn = h((await where({ condition: lr, x: one(TURN), y: one(-TURN) }, { output: "gpu" })).output);
+    const dh = h((await where({ condition: keepOn, x: one(0), y: turn }, { output: "gpu" })).output);
+    const nh1 = h((await add({ a: head, b: dh }, { output: "gpu" })).c);
+    const nh = (await add({ a: nh1, b: noise[steps % 8] }, { output: "gpu" })).c;
+    // 4. move one cell along the heading and wrap
+    const ch = h((await cos({ x: nh }, { output: "gpu" })).y), sh = h((await sin({ x: nh }, { output: "gpu" })).y);
+    const wrap = async (p, d) => { const a = h((await add({ a: p, b: h((await mul({ a: d, b: one(SPEED) }, { output: "gpu" })).c) }, { output: "gpu" })).c); const b = h((await add({ a, b: one(M) }, { output: "gpu" })).c); return (await mod({ a: b, b: one(M) }, { attrs: { fmod: 1 }, output: "gpu" })).c; };
+    const npx = await wrap(px, ch), npy = await wrap(py, sh);
+    // 5. deposit: flat index y*M + x into the trail viewed as one long column, summed where agents coincide.
+    //    ScatterND wants int64 indices, which no kernel can produce on the card; ScatterElements takes int32.
+    const iy = h((await cast({ x: h((await floor({ x: npy }, { output: "gpu" })).y) }, { attrs: { to: 6 }, output: "gpu" })).y);
+    const ix = h((await cast({ x: h((await floor({ x: npx }, { output: "gpu" })).y) }, { attrs: { to: 6 }, output: "gpu" })).y);
+    const flat = h((await add({ a: h((await mul({ a: iy, b: { data: new Int32Array([M]), shape: [1] } }, { output: "gpu" })).c), b: ix }, { output: "gpu" })).c);
+    const shp = (dims) => ({ data: BigInt64Array.from(dims.map(BigInt)), shape: [dims.length], dtype: "int64" });
+    const col = h((await reshape({ data: trail, shape: shp([1, 1, M * M, 1]) }, { outputs: { reshaped: { shape: [1, 1, M * M, 1], dtype: "float32" } }, output: "gpu" })).reshaped);
+    const depc = h((await scatter({ data: col, indices: flat, updates: ones }, { attrs: { axis: 2, reduction: "add" }, output: "gpu" })).output);
+    const dep = h((await reshape({ data: depc, shape: shp([1, 1, M, M]) }, { outputs: { reshaped: { shape: [1, 1, M, M], dtype: "float32" } }, output: "gpu" })).reshaped);
+    // 6. blur and decay in one convolution
+    if (!blurW) blurW = await keep(f32(new Float32Array(9).fill(1), [1, 1, 3, 3]));
+    const w = h((await mul({ a: blurW, b: one(decay / 9) }, { output: "gpu" })).c);
+    const nt = (await conv({ x: dep, w }, { attrs: { pads: [1, 1, 1, 1], kernel_shape: [3, 3] }, outputs: { y: { shape: [1, 1, M, M], dtype: "float32" } }, output: "gpu" })).y;
+    held.forEach((t) => t.destroy()); px.destroy(); py.destroy(); head.destroy(); trail.destroy();
+    px = npx; py = npy; head = nh; trail = nt; steps++;
+    return 46;
+  }
+  async function frame() {
+    const my = gen; let calls = 0;
+    busy = true;
+    if (!paused) for (let i = 0; i < 2 && my === gen; i++) calls = await step();
+    busy = false;
+    if (my !== gen) return;
+    const d = (await add({ a: trail, b: one(0) })).c.data;         // the one readback per frame
+    draw(d, calls);
+    setTimeout(() => frame().catch(fail), 0);
+  }
+  function draw(d, calls) {
+    const img = g.createImageData(M, M), p = img.data; let mx = 0, tot = 0;
+    for (let i = 0; i < M * M; i++) { tot += d[i]; if (d[i] > mx) mx = d[i]; }
+    const sc = 1 / (tot / (M * M) * 6 + 1e-9);          // brightness saturates at six times the mean, or one hotspot hides the web
+    for (let i = 0; i < M * M; i++) { const t = Math.min(1, d[i] * sc), q = Math.sqrt(t); p[i * 4] = 255 * Math.min(1, q * 1.3); p[i * 4 + 1] = 255 * q * q * 0.9 + 40 * q; p[i * 4 + 2] = 120 * q * (1 - q) + 30 * q; p[i * 4 + 3] = 255; }
+    const tmp = document.createElement("canvas"); tmp.width = tmp.height = M; tmp.getContext("2d").putImageData(img, 0, 0);
+    g.imageSmoothingEnabled = true; g.drawImage(tmp, 0, 0, 512, 512);
+    $("steps").textContent = steps; $("tot").textContent = tot.toExponential(2); if (calls) $("calls").textContent = calls;
+    const dt = (performance.now() - t0) / 1000; if (dt > 0.5) $("sps").textContent = (steps / dt).toFixed(0);
+    window.__result = { A, M, steps, total: tot, max: mx };
+  }
+  for (const [id, fmt] of [["sa", (v) => v + "°"], ["sd", (v) => v], ["decay", (v) => (+v).toFixed(2)]]) $(id).oninput = () => { $(id + "v").textContent = fmt($(id).value); };
+  $("reset").onclick = () => reset().catch(fail); $("agents").onchange = $("map").onchange = () => reset().catch(fail);
+  $("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "Resume" : "Pause"; };
+  await reset(); say("running");
+} catch (e) { fail(e); }
+</script>
+</html>
