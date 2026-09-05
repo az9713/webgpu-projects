@@ -41,6 +41,7 @@
 <p>The overflow is not a bug either. The largest finite float is about 3.403 &times; 10<sup>38</sup>, so <code>exp(x)</code> must overflow the moment x passes <code>ln(3.403 &times; 10<sup>38</sup>) = 88.7228</code>. Drag the slider and the exponent field fills to 255 at 88.73.</p>
 
 <p style="margin-top:14px">The decoded line is <code>(&minus;1)<sup>sign</sup> &times; 2<sup>exponent &minus; 127</sup> &times; (1 + fraction / 2<sup>23</sup>)</code>. An exponent field of 255 means infinity when the fraction is zero and NaN otherwise. An exponent field of 0 is a subnormal: no hidden 1, and 2<sup>&minus;126</sup> instead. Many GPUs flush subnormals to zero, and the last row shows what this one does. <code>IsInf</code> and <code>IsNaN</code> are separate kernels, so their answers are the GPU's, not JavaScript's. Kernels: <code>Exp Sub Div Concat BitCast BitShift BitwiseAnd IsNaN IsInf</code>.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 9 of the 207:</b> <code>BitCast</code> <code>BitShift</code> <code>BitwiseAnd</code> <code>Concat</code> <code>Div</code> <code>Exp</code> <code>IsInf</code> <code>IsNaN</code> <code>Sub</code></p>
 
 <script type="module">
 const st = document.getElementById("st");

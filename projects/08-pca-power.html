@@ -41,6 +41,7 @@
 <p>The second component comes from Hotelling deflation: subtract <code>&lambda;<sub>1</sub>u<sub>1</sub>u<sub>1</sub><sup>T</sup></code> from C, which sets the found eigenvalue to zero and leaves the others untouched, then run the same iteration again.</p>
 
 <p style="margin-top:14px">Pipeline: <code>ReduceMean</code> and <code>Sub</code> centre the data; <code>Gemm</code> with <code>transA</code> builds the covariance X<sup>T</sup>X / n; each iteration is one <code>MatMul</code> and one <code>LpNormalization</code>; the deflation is <code>Gemm</code> for the outer product and <code>Sub</code>. The scores that are plotted are one last <code>MatMul</code>. Convergence stops when the vector moves by less than 10<sup>&minus;6</sup> between iterations. The rate is set by the ratio of the two largest eigenvalues: close eigenvalues converge slowly, and the slider lets you make them close.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 5 of the 207:</b> <code>Gemm</code> <code>LpNormalization</code> <code>MatMul</code> <code>ReduceMean</code> <code>Sub</code></p>
 
 <script type="module">
 const st = document.getElementById("st");

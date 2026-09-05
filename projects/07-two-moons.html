@@ -45,6 +45,7 @@
 <p>The learning rate sets whether gradient descent converges or bounces. At 0.5 the page reaches 99.5% in about 630 steps; at 2 the loss oscillates, because the step overshoots the curvature of the loss surface.</p>
 
 <p style="margin-top:14px">Forward: <code>MatMul</code>, <code>Add</code>, <code>Relu</code>, <code>MatMul</code>, <code>Add</code>, <code>Sigmoid</code>. Backward: the gradient of sigmoid with the log loss is <code>Sub</code>, p &minus; y. The gradient through the rectifier is a comparison and a select, <code>Greater</code> then <code>Where</code>, which is two more calls than people expect. <code>Transpose</code> flips the activations for the weight gradients, <code>ReduceSum</code> collects the bias gradients, and <code>Mul</code> and <code>Sub</code> apply the update. Weights stay on the card between steps.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 12 of the 207:</b> <code>Abs</code> <code>Add</code> <code>Greater</code> <code>MatMul</code> <code>Mul</code> <code>ReduceMean</code> <code>ReduceSum</code> <code>Relu</code> <code>Sigmoid</code> <code>Sub</code> <code>Transpose</code> <code>Where</code></p>
 
 <script type="module">
 const st = document.getElementById("st");

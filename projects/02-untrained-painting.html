@@ -35,6 +35,7 @@
 <p>The tanh layers that follow compose those sinusoids. A composition of smooth bounded functions stays smooth and bounded, so the output has no edges except where a tanh saturates &mdash; and a saturating tanh is exactly what draws a hard contour. Feeding in the radius <code>r = &radic;(x<sup>2</sup>+y<sup>2</sup>)</code> alongside x and y adds a term with rotational symmetry, which is why concentric structure appears so often. The final sigmoid maps each of the three outputs into [0, 1] to be read as red, green and blue.</p>
 
 <p style="margin-top:14px">Input per pixel: x, y in [&minus;1, 1] and the distance from the centre. Layer 1 is <code>Sin</code> of a random projection, scaled by the frequency slider. The hidden layers are <code>MatMul</code>, <code>Add</code>, <code>Tanh</code>. The output is <code>Sigmoid</code>. Everything after the coordinate upload stays on the card until the final colour readback.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 5 of the 207:</b> <code>Add</code> <code>MatMul</code> <code>Sigmoid</code> <code>Sin</code> <code>Tanh</code></p>
 
 <script type="module">
 const st = document.getElementById("st");

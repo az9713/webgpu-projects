@@ -42,6 +42,7 @@
 <p>The fading confidence has a separate cause. With no regularisation and cleanly separable data, the loss keeps falling as &#8214;w&#8214; grows, so the weights run away and the shading turns hard. Contradictory points make the data non-separable: growing &#8214;w&#8214; now increases the loss on the poisoned points, so the norm settles at a finite value. The boundary moves a little and the calibration is destroyed &mdash; clean accuracy stays near 98% while the model stops knowing what it knows.</p>
 
 <p style="margin-top:14px">Each step is eight kernel calls, all on the card: <code>MatMul</code> for the logits, <code>Sigmoid</code>, <code>Sub</code> for p &minus; y, <code>MatMul</code> with the transposed inputs for the gradient, <code>Mul</code> by the learning rate, <code>Sub</code> to update the weights, then <code>Abs</code> and <code>ReduceMean</code> to report the error. The weights stay resident between steps. Logistic regression is fragile by design here: every point pulls on one straight line, so a mislabelled point far from the boundary pulls hardest.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 6 of the 207:</b> <code>Abs</code> <code>MatMul</code> <code>Mul</code> <code>ReduceMean</code> <code>Sigmoid</code> <code>Sub</code></p>
 
 <script type="module">
 const st = document.getElementById("st");

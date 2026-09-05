@@ -39,6 +39,7 @@
 <p>The rule that follows is the practical one for any GPU pipeline: batch work into long chains that stay resident, and cross the boundary once. The last column counts the bytes never copied, <code>7 &times; 2 &times; 4N<sup>2</sup></code>, which is the visible half of a cost whose larger half is the waiting.</p>
 
 <p style="margin-top:14px">Readback means the result buffer is mapped and copied to a typed array after every call, then uploaded again for the next one. On-card means <code>{ output: "gpu" }</code>, so the buffer is handed straight to the next call. The last column is the bytes the on-card mode never copies. To keep the values finite over eight multiplies, B is scaled by 1/N. Run-to-run variance on this laptop is about 10%, so read a gap smaller than that as noise. Chrome picks one GPU at startup, so this measures whichever adapter Chrome holds now.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 3 of the 207:</b> <code>Add</code> <code>MatMul</code> <code>Mul</code></p>
 
 <script type="module">
 const st = document.getElementById("st");
