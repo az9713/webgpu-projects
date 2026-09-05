@@ -3,3 +3,7 @@
 HANDOFF.md
 README.txt
 transcript.txt
+
+# build routing, private like HANDOFF.md
+.claude/
+queue.tsv
