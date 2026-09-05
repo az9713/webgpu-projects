@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>The activation zoo, all twenty of them</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;background:#0b1220;display:block}
+  button{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .plots{display:flex;flex-direction:column;gap:10px}
+  .legend{display:grid;grid-template-columns:repeat(2,1fr);gap:5px 14px;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;font-size:.83rem;min-width:340px;max-height:560px;overflow:auto}
+  .legend label{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .legend .sw{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+  .legend .name{flex:1}
+  .legend .bad{color:#f87171;font-size:.72rem}
+  .ms{color:#0f172a;background:#2dd4bf;border-radius:3px;font-size:.65rem;padding:0 4px;margin-left:3px;font-weight:600}
+  #diag{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 14px;font:12px/1.5 ui-monospace,Consolas,monospace;color:#94a3b8;white-space:pre-wrap;max-height:240px;overflow:auto}
+  code{color:#2dd4bf}
+</style>
+
+<h1>The activation zoo, all twenty of them</h1>
+<p>Twenty activation kernels, all fed the same sweep of 201 points from &minus;5 to 5, plotted on one panel with their derivative below. The derivative is not a separate kernel &mdash; it is a central difference taken in JavaScript over the values the GPU already returned. Untick a curve in the legend to pull it out of the crowd. A kernel the page cannot call at all shows a disabled box and a red error note instead of a curve.</p>
+<div class="row" style="margin-bottom:10px">
+  <button id="all">Show all</button><button id="none">Hide all</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row">
+  <div class="plots">
+    <canvas id="fn" width="700" height="270"></canvas>
+    <canvas id="deriv" width="700" height="220"></canvas>
+  </div>
+  <div class="legend" id="legend"></div>
+</div>
+<div id="diag" style="margin-top:10px"></div>
+
+<h2>The science</h2>
+<p>An activation function is the one deliberately non-straight step in a neural network. Without it, stacking layers gains nothing, because a chain of linear maps collapses into a single linear map. All twenty functions here bend the line; they differ in where they bend, how sharply, and whether they let anything through on the negative side.</p>
+<p>Three families are visible. The rectifier family is flat below zero and straight above it, differing only in what happens to negative inputs. The sigmoid family saturates at both ends, which is what caused vanishing gradients in deep networks and drove the shift to rectifiers. The smooth-gate family multiplies the input by a soft switch, giving a slight dip below zero.</p>
+<p>Several values at the origin are exact, and they act as correctness checks. Softplus(0) is ln 2, and the card returns 0.6931472. Sigmoid and HardSigmoid return 0.5. The other seventeen return 0.</p>
+<p>The slopes at the origin are measured by a central difference over a step of 0.05, so most land near theory: Sigmoid 0.24995 against 0.25, Tanh 0.99917 against 1, Erf 1.12744 against 2/&radic;&pi; = 1.12838. Softsign is the exception at <b>0.95238</b>, and it is not an error. Its central difference equals 1/(1+h) exactly, which for h = 0.05 is 1/1.05. Expect that value, not 1.</p>
+<p>The two cheap approximations to Gelu differ from it by 4.7e-4 for FastGelu and 0.0203 for QuickGelu, the latter diverging most near |x| = 2, where the curve bends hardest.</p>
+
+<p style="margin-top:14px">Every call here is a single unary kernel: an input tensor <code>x</code> in, an output tensor the same shape out, no chaining, so there is nothing to keep on the card and no <code>{ output: "gpu" }</code> handoff &mdash; each result is read back the moment it exists. Nine of the twenty take an attribute (<code>alpha</code>, <code>beta</code>, <code>gamma</code>, <code>bias</code>, <code>lambd</code> or <code>approximate</code>); the page tries the call with no attribute first and falls back to the ONNX-spec default value if that fails. <code>PRelu</code> also needs a <code>slope</code> tensor, filled here at 0.25 and shaped exactly like <code>x</code> rather than a broadcast scalar, since some kernels refuse to broadcast at all. <code>FastGelu</code>'s <code>bias</code> input is optional, so the page tries without it and only supplies a zero bias if that call fails. The page records which argument key actually worked for each kernel in <code>window.__result.argsUsed</code>, and any kernel it could not call at all in <code>window.__result.failed</code>. Two curves are expected to sit exactly on top of each other: <code>Celu</code> at its default &alpha;=1 is algebraically identical to <code>Elu</code> at &alpha;=1. And because the derivative is a finite difference on a 0.05-wide grid, it smears every kink over one sample and is exact only where the true derivative is locally flat: <code>Relu</code>'s reads 0.5, not 0 or 1, at the single grid point x=0, and <code>Softsign</code>'s reads 0.952 there against a true 1.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 20 of the 207:</b> <code>Relu</code> <code>LeakyRelu</code> <code>PRelu</code> <code>Elu</code> <code>Celu</code> <code>Selu</code> <code>Gelu</code> <code>Mish</code> <code>Swish</code> <code>HardSwish</code> <code>HardSigmoid</code> <code>Softplus</code> <code>Softsign</code> <code>Shrink</code> <code>ThresholdedRelu</code> <code>Erf</code> <code>Sigmoid</code> <code>Tanh</code> <code>FastGelu</code><span class="ms">ms</span> <code>QuickGelu</code><span class="ms">ms</span></p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const opMs = (n) => K.getKernel("webgpu-kernels/com.microsoft." + n, { version: 1 });
+  const f32 = (a, shape) => ({ data: Float32Array.from(a), shape });
+
+  const ACT = [
+    { name: "Relu",            ns: "ai.onnx" },
+    { name: "LeakyRelu",       ns: "ai.onnx", attrs: { alpha: 0.01 } },
+    { name: "PRelu",           ns: "ai.onnx", isPRelu: true },
+    { name: "Elu",             ns: "ai.onnx", attrs: { alpha: 1.0 } },
+    { name: "Celu",            ns: "ai.onnx", attrs: { alpha: 1.0 } },
+    { name: "Selu",            ns: "ai.onnx", attrs: { alpha: 1.6732632423543772, gamma: 1.0507009873554805 } },
+    { name: "Gelu",            ns: "ai.onnx", attrs: { approximate: "none" } },
+    { name: "Mish",            ns: "ai.onnx" },
+    { name: "Swish",           ns: "ai.onnx", attrs: { alpha: 1.0 } },
+    { name: "HardSwish",       ns: "ai.onnx" },
+    { name: "HardSigmoid",     ns: "ai.onnx", attrs: { alpha: 0.2, beta: 0.5 } },
+    { name: "Softplus",        ns: "ai.onnx" },
+    { name: "Softsign",        ns: "ai.onnx" },
+    { name: "Shrink",          ns: "ai.onnx", attrs: { bias: 0.0, lambd: 0.5 } },
+    { name: "ThresholdedRelu", ns: "ai.onnx", attrs: { alpha: 1.0 } },
+    { name: "Erf",             ns: "ai.onnx" },
+    { name: "Sigmoid",         ns: "ai.onnx" },
+    { name: "Tanh",            ns: "ai.onnx" },
+    { name: "FastGelu",        ns: "com.microsoft", isFastGelu: true },
+    { name: "QuickGelu",       ns: "com.microsoft", attrs: { alpha: 1.702 } },
+  ];
+  const COLORS = ACT.map((_, i) => `hsl(${Math.round(i * 360 / ACT.length)} 70% 60%)`);
+
+  say("loading 20 kernels…");
+  const loaded = await Promise.allSettled(ACT.map((a) => (a.ns === "ai.onnx" ? op : opMs)(a.name)));
+  loaded.forEach((r, i) => {
+    if (r.status === "fulfilled") ACT[i].fn = r.value;
+    else ACT[i].loadError = (r.reason && (r.reason.message || String(r.reason))) || "load failed";
+  });
+
+  const N = 201, X0 = -5, X1 = 5, dx = (X1 - X0) / (N - 1);
+  const xArr = new Float32Array(N);
+  for (let i = 0; i < N; i++) xArr[i] = X0 + i * dx;
+  const IDX0 = 100; // xArr[100] === 0 exactly, since -5 + 100*0.05 = 0
+  const X = f32(xArr, [N, 1]);
+  const SLOPE = f32(new Float32Array(N).fill(0.25), [N, 1]);
+  const ZEROBIAS = f32(new Float32Array(N).fill(0), [N, 1]);
+
+  function extractData(res) {
+    const k = Object.keys(res).find((kk) => res[kk] && res[kk].data);
+    if (!k) throw new Error("no tensor-like output found in result object");
+    return Float32Array.from(res[k].data);
+  }
+
+  async function callUnary(fn, attrsDefault) {
+    const keys = ["x", "input", "a", "X"];
+    let firstErr = null;
+    for (const k of keys) {
+      try { const res = await fn({ [k]: X }); return { data: extractData(res), used: k }; }
+      catch (e) { if (!firstErr) firstErr = (e.message || String(e)) + ` [tried {${k}}]`; }
+    }
+    if (attrsDefault) {
+      for (const k of keys) {
+        try { const res = await fn({ [k]: X }, { attrs: attrsDefault }); return { data: extractData(res), used: `${k} + attrs` }; }
+        catch (e) { /* keep firstErr from the no-attrs pass */ }
+      }
+    }
+    throw new Error(firstErr || "all argument-key attempts failed");
+  }
+
+  async function callPRelu(fn) {
+    const combos = [["x", "slope"], ["input", "slope"], ["a", "b"], ["X", "slope"]];
+    let firstErr = null;
+    for (const [xk, sk] of combos) {
+      try { const res = await fn({ [xk]: X, [sk]: SLOPE }); return { data: extractData(res), used: `${xk},${sk}` }; }
+      catch (e) { if (!firstErr) firstErr = (e.message || String(e)) + ` [tried {${xk},${sk}}]`; }
+    }
+    throw new Error(firstErr || "all PRelu attempts failed");
+  }
+
+  async function callFastGelu(fn) {
+    try { const r = await callUnary(fn, null); return r; }
+    catch (e1) {
+      const keys = ["x", "input", "a", "X"];
+      for (const k of keys) {
+        try { const res = await fn({ [k]: X, bias: ZEROBIAS }); return { data: extractData(res), used: `${k}+bias` }; }
+        catch (e2) { /* fall through */ }
+      }
+      throw e1;
+    }
+  }
+
+  say("computing 20 activation sweeps…");
+  const values = {}, argsUsed = {}, failed = {};
+  for (const a of ACT) {
+    if (!a.fn) { failed[a.name] = a.loadError; continue; }
+    try {
+      let r;
+      if (a.isPRelu) r = await callPRelu(a.fn);
+      else if (a.isFastGelu) r = await callFastGelu(a.fn);
+      else r = await callUnary(a.fn, a.attrs);
+      values[a.name] = r.data; argsUsed[a.name] = r.used;
+    } catch (e) { failed[a.name] = e.message || String(e); }
+  }
+
+  function derivative(y) {
+    const n = y.length, d = new Float32Array(n);
+    d[0] = (y[1] - y[0]) / dx;
+    for (let i = 1; i < n - 1; i++) d[i] = (y[i + 1] - y[i - 1]) / (2 * dx);
+    d[n - 1] = (y[n - 1] - y[n - 2]) / dx;
+    return d;
+  }
+  const derivs = {};
+  for (const name of Object.keys(values)) derivs[name] = derivative(values[name]);
+
+  // theory checkpoints at x = 0
+  const theoryValueAtZero = { Softplus: Math.log(2), Sigmoid: 0.5, HardSigmoid: 0.5 };
+  ["Erf","Tanh","Softsign","Gelu","Mish","Swish","HardSwish","Relu","LeakyRelu","PRelu","Elu","Celu","Selu","Shrink","ThresholdedRelu","FastGelu","QuickGelu"]
+    .forEach((n) => theoryValueAtZero[n] = 0);
+  const theoryDerivAtZero = { Erf: 2 / Math.sqrt(Math.PI), Tanh: 1, Softsign: 1, Sigmoid: 0.25, Softplus: 0.5, Gelu: 0.5, HardSigmoid: 0.2 };
+  const measuredValueAtZero = {}, measuredDerivAtZero = {};
+  for (const name of Object.keys(values)) measuredValueAtZero[name] = values[name][IDX0];
+  for (const name of Object.keys(theoryDerivAtZero)) if (derivs[name]) measuredDerivAtZero[name] = derivs[name][IDX0];
+
+  const maxDiff = {};
+  if (values.Gelu && values.FastGelu) {
+    let m = 0; for (let i = 0; i < N; i++) m = Math.max(m, Math.abs(values.Gelu[i] - values.FastGelu[i]));
+    maxDiff.geluVsFastGelu = m;
+  }
+  if (values.Gelu && values.QuickGelu) {
+    let m = 0; for (let i = 0; i < N; i++) m = Math.max(m, Math.abs(values.Gelu[i] - values.QuickGelu[i]));
+    maxDiff.geluVsQuickGelu = m;
+  }
+
+  // --- rendering ---
+  const legend = document.getElementById("legend");
+  const visible = new Set(Object.keys(values));
+  ACT.forEach((a, i) => {
+    const ok = !!values[a.name];
+    const row = document.createElement("label");
+    row.dataset.name = a.name;
+    row.innerHTML = `<input type="checkbox" ${ok ? "checked" : ""} ${ok ? "" : "disabled"}>
+      <span class="sw" style="background:${COLORS[i]}"></span>
+      <span class="name">${a.name}${a.ns === "com.microsoft" ? '<span class="ms">ms</span>' : ""}</span>
+      ${ok ? "" : `<span class="bad" title="${(failed[a.name] || "").replace(/"/g, "&quot;")}">error</span>`}`;
+    const cb = row.querySelector("input");
+    if (ok) cb.onchange = () => { cb.checked ? visible.add(a.name) : visible.delete(a.name); drawAll(); };
+    legend.appendChild(row);
+  });
+  document.getElementById("all").onclick = () => {
+    legend.querySelectorAll("label").forEach((row) => { const cb = row.querySelector("input"); if (!cb.disabled) { cb.checked = true; visible.add(row.dataset.name); } });
+    drawAll();
+  };
+  document.getElementById("none").onclick = () => {
+    legend.querySelectorAll("input:not(:disabled)").forEach((cb) => { cb.checked = false; });
+    visible.clear(); drawAll();
+  };
+
+  function drawAxes(ctx, W, H, yMin, yMax) {
+    ctx.fillStyle = "#0b1220"; ctx.fillRect(0, 0, W, H);
+    const xToPx = (x) => (x - X0) / (X1 - X0) * W;
+    const yToPx = (y) => H - (y - yMin) / (yMax - yMin) * H;
+    ctx.strokeStyle = "#1e293b"; ctx.fillStyle = "#94a3b8"; ctx.font = "11px ui-monospace,Consolas,monospace";
+    for (const xt of [-5, -2.5, 0, 2.5, 5]) {
+      ctx.beginPath(); ctx.moveTo(xToPx(xt), 0); ctx.lineTo(xToPx(xt), H); ctx.stroke();
+      ctx.fillText(String(xt), xToPx(xt) + 2, H - 4);
+    }
+    const step = (yMax - yMin) / 4;
+    for (let yt = yMin; yt <= yMax + 1e-9; yt += step) {
+      ctx.beginPath(); ctx.moveTo(0, yToPx(yt)); ctx.lineTo(W, yToPx(yt)); ctx.stroke();
+      ctx.fillText(yt.toFixed(1), 2, yToPx(yt) - 2);
+    }
+    ctx.strokeStyle = "#334155"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(xToPx(0), 0); ctx.lineTo(xToPx(0), H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, yToPx(0)); ctx.lineTo(W, yToPx(0)); ctx.stroke();
+    return { xToPx, yToPx };
+  }
+  function plot(canvas, dataMap, yMin, yMax) {
+    const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+    const { xToPx, yToPx } = drawAxes(ctx, W, H, yMin, yMax);
+    ACT.forEach((a, i) => {
+      const d = dataMap[a.name];
+      if (!d || !visible.has(a.name)) return;
+      ctx.strokeStyle = COLORS[i]; ctx.lineWidth = 1.6; ctx.beginPath();
+      for (let j = 0; j < N; j++) { const px = xToPx(xArr[j]), py = yToPx(d[j]); if (j === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); }
+      ctx.stroke();
+    });
+  }
+  function drawAll() {
+    plot(document.getElementById("fn"), values, -2.5, 5.5);
+    plot(document.getElementById("deriv"), derivs, -0.5, 2);
+  }
+  drawAll();
+
+  const succeeded = Object.keys(values).length, failedNames = Object.keys(failed);
+  say(`${succeeded} of 20 activation kernels rendered` + (failedNames.length ? `, ${failedNames.length} failed: ${failedNames.join(", ")}` : ""));
+  document.getElementById("diag").textContent =
+    "argsUsed: " + JSON.stringify(argsUsed) + "\n" +
+    "failed: " + JSON.stringify(failed) + "\n" +
+    "value at x=0 (measured): " + JSON.stringify(Object.fromEntries(Object.entries(measuredValueAtZero).map(([k,v]) => [k, +v.toFixed(5)]))) + "\n" +
+    "derivative at x=0 (measured): " + JSON.stringify(Object.fromEntries(Object.entries(measuredDerivAtZero).map(([k,v]) => [k, +v.toFixed(5)]))) + "\n" +
+    "maxDiff: " + JSON.stringify(Object.fromEntries(Object.entries(maxDiff).map(([k,v]) => [k, +v.toFixed(6)])));
+
+  window.__result = {
+    requestedKernels: 20, succeeded, failed, argsUsed,
+    domain: [X0, X1], n: N, dx,
+    theoryValueAtZero, measuredValueAtZero,
+    theoryDerivAtZero, measuredDerivAtZero,
+    maxDiff,
+  };
+} catch (e) { fail(e); }
+</script>
+</html>

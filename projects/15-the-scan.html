@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>The scan, and everything it builds</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
+  h3{color:#fb923c;font-size:.95rem;margin:0 0 4px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap;font-size:.85rem}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:14px 16px;margin:14px 0}
+  .lab{color:#94a3b8;font-size:.82rem;margin:6px 0 4px}
+  .cells{display:flex;flex-wrap:wrap;gap:3px;margin:4px 0 10px}
+  .cell{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 4px;border-radius:3px;font:10px ui-monospace,Consolas,monospace;color:#0f172a}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:120px;margin:8px 0 4px}
+  .bar{width:16px;border-radius:2px 2px 0 0}
+  .stat{color:#e2e8f0;font-size:.85rem}
+  .stat b{color:#2dd4bf}
+  code{color:#2dd4bf}
+</style>
+
+<h1>The scan, and everything it builds</h1>
+<p>One kernel, <code>CumSum</code>, runs a prefix sum: each output cell holds the running total of every input cell before it. That single idea, plus a comparison and a select, is the whole machine behind four very different jobs below &mdash; keeping only the rows that match, finding the runs in a sequence, building a histogram, and handing every item its own slice of a shared output buffer. Nothing here sorts anything; there is no sort kernel in the library.</p>
+<div id="st">loading the library&hellip;</div>
+
+<div class="card" id="cardCompaction">
+  <h3>1 &middot; Stream compaction</h3>
+  <p>Sixty-four random categories, 0&ndash;7. Keep only the ones equal to the target, pack them to the front, drop the rest. The destination of each kept item is an exclusive prefix sum over "is it a match".</p>
+  <div class="row">
+    <label>target category
+      <select id="ccTarget">
+        <option>0</option><option>1</option><option>2</option><option>3</option>
+        <option selected>4</option><option>5</option><option>6</option><option>7</option>
+      </select>
+    </label>
+    <button id="ccGo">New random array</button>
+  </div>
+  <div class="lab">input, n = 64 (teal = matches the target)</div>
+  <div class="cells" id="ccIn"></div>
+  <div class="lab">output &mdash; compacted, front-packed</div>
+  <div class="cells" id="ccOut"></div>
+  <div class="stat">matches <b id="ccCount">&ndash;</b></div>
+</div>
+
+<div class="card" id="cardRLE">
+  <h3>2 &middot; Run-length encoding</h3>
+  <p>Sixty-four categories generated as runs. A position starts a new run when it differs from its neighbour; an exclusive prefix sum over "starts a new run" gives every position its run number. The run table is built by scattering each run's start position and value into that run's row.</p>
+  <div class="row"><button id="rleGo">New random runs</button></div>
+  <div class="lab">input, n = 64 (colour = category)</div>
+  <div class="cells" id="rleIn"></div>
+  <div class="lab">output &mdash; one block per run, width &prop; run length</div>
+  <div class="cells" id="rleOut"></div>
+  <div class="stat" id="rleCount">&ndash;</div>
+</div>
+
+<div class="card" id="cardHistogram">
+  <h3>3 &middot; A histogram, with no reduction kernel</h3>
+  <p>4096 values, 16 bins. Build a [bin &times; sample] table of "does this sample belong to this bin", run an <em>inclusive</em> prefix sum along the sample axis, and the last column of each row is that bin's total &mdash; a sum, computed without ever calling a reduce kernel.</p>
+  <div class="row"><button id="hgGo">New random values</button></div>
+  <div class="bars" id="hgBars"></div>
+  <div class="stat" id="hgStat">&ndash;</div>
+</div>
+
+<div class="card" id="cardAlloc">
+  <h3>4 &middot; Allocating variable-sized output</h3>
+  <p>Twenty-four items, each wanting 1&ndash;4 slots of shared output. An exclusive prefix sum over the requested counts gives every item the start of its own block &mdash; the same trick a parallel memory allocator uses. The kernel writes the block heads; filling each block's interior is done here in JavaScript, just for the picture.</p>
+  <div class="row"><button id="alGo">New random items</button></div>
+  <div class="lab">input &mdash; item id, width &prop; requested count</div>
+  <div class="cells" id="alIn"></div>
+  <div class="lab">output buffer &mdash; coloured by owning item</div>
+  <div class="cells" id="alOut"></div>
+  <div class="stat" id="alStat">&ndash;</div>
+</div>
+
+<h2>The science</h2>
+<p>A prefix sum answers one question for every element at once: how much comes before me? That answer is an address. If each element contributes 1 when it should be kept and 0 when it should be dropped, then the running total before an element is exactly the slot it belongs in once the dropped ones are gone. Nothing needs sorting and nothing needs a queue, because every element computes its own destination without consulting any other.</p>
+<p>Four different-looking jobs here are the same three moves. A comparison marks each element, a select turns the mark into a number, and a prefix sum turns those numbers into positions. Keeping matching rows, finding runs in a sequence, building a histogram, and handing every item its own slice of a shared buffer differ only in what is being counted.</p>
+<p>Every result is checked against plain JavaScript on the same data. The histogram's 16 bins sum to <b>4096</b>, which is forced: 4096 samples each land in exactly one bin, so the totals cannot come to anything else. Bin by bin, the card and JavaScript agree. Compaction finds 13 matches against 13, run-length encoding finds 15 runs against 15, and the allocator hands out 57 slots against 57.</p>
+<p>One stop is unavoidable. <code>ScatterND</code> requires its indices as 64-bit integers, and no kernel on this card can produce a 64-bit integer, so each scatter reads its positions back to the processor, rounds them, and uploads them again. That is the library's limit, not a choice made for speed.</p>
+
+<p style="margin-top:14px">Every demo runs the same three moves. A comparison (<code>Equal</code>) makes a boolean flag per element. A select (<code>Where</code>) turns that flag into a number, or turns a computed position into a real index versus a harmless dump slot. A prefix sum (<code>CumSum</code>, run exclusive so a cell's value is the count of everything <em>before</em> it, not including itself) turns "is this true" into "where does this go". The one kernel that cannot run this pipeline end-to-end is <code>ScatterND</code>: it wants its <code>indices</code> input as int64, and no kernel on this card can produce int64, so every scatter here takes one deliberate trip through JavaScript &mdash; read the float32 positions back, round them, box them as <code>BigInt64Array</code>, upload again. That is not a performance choice; it is the one place the library forces a CPU stop. <code>Range</code> only appears once, to generate the bin numbers 0&ndash;15 for the histogram, because that is the only demo that needs a fresh sequence rather than a scan over data that already exists.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 5 of the 207:</b> <code>CumSum</code> <code>Equal</code> <code>Range</code> <code>ScatterND</code> <code>Where</code></p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+const $ = (id) => document.getElementById(id);
+const PALETTE = ["#fb923c", "#2dd4bf", "#60a5fa", "#f472b6", "#facc15", "#a78bfa", "#34d399", "#f87171"];
+
+function renderCells(id, arr, colorFn, textFn) {
+  $(id).innerHTML = arr.map((v, i) => `<span class="cell" style="background:${colorFn(v, i)}">${textFn ? textFn(v, i) : v}</span>`).join("");
+}
+
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (name) => K.getKernel("webgpu-kernels/ai.onnx." + name, { version: 1 });
+  const [equal, where, cumsum, range, scatternd] = await Promise.all(
+    ["Equal", "Where", "CumSum", "Range", "ScatterND"].map(op));
+  say("ready");
+
+  const f32 = (a, shape) => ({ data: Float32Array.from(a), shape: shape || [a.length] });
+  const i32 = (a, shape) => ({ data: Int32Array.from(a), shape: shape || [a.length], dtype: "int32" });
+  const i64 = (a, shape) => ({ data: BigInt64Array.from(a.map((v) => BigInt(Math.round(v)))), shape: shape || [a.length], dtype: "int64" });
+
+  // CumSum's axis is a plain JavaScript number in the args object — measured, not guessed.
+  // It is not an attribute (the manifest declares only exclusive/reverse) and not a tensor
+  // ("axis is not a tensor arg of this op"). Verified on a [2,3] input: axis 0 gives
+  // [1,2,3,11,22,33], axis 1 gives [1,3,6,10,30,60], exclusive 1 gives [0,1,3,0,10,30].
+  const cumsumAxisMode = "primitive-number";
+  async function doCumsum(x, axis, exclusive, reverse, gpu) {
+    const outOpt = gpu ? { output: "gpu" } : {};
+    return await cumsum({ x, axis }, { attrs: { exclusive, reverse }, ...outOpt });
+  }
+
+  async function safeRun(name, fn, cardId) {
+    try { await fn(); return true; }
+    catch (e) {
+      $(cardId).insertAdjacentHTML("beforeend", `<div class="err">${name} failed: ${e.message || e}</div>`);
+      window.__error = (window.__error ? window.__error + "; " : "") + name + ": " + (e.message || e);
+      return false;
+    }
+  }
+
+  // ---------- 1. stream compaction ----------
+  let ccCat = null;
+  async function runCompaction(regen) {
+    const n = 64, C = 8;
+    if (regen || !ccCat) ccCat = Array.from({ length: n }, () => Math.floor(Math.random() * C));
+    const cat = ccCat, target = +$("ccTarget").value;
+    const ones = new Array(n).fill(1), zeros = new Array(n).fill(0);
+
+    const eq = await equal({ a: f32(cat), b: f32(new Array(n).fill(target)) }, { output: "gpu" });
+    const maskF = await where({ condition: eq.c, x: f32(ones), y: f32(zeros) }, { output: "gpu" });
+    const dest = await doCumsum(maskF.output, 0, 1, 0, true);           // exclusive: count of matches strictly before i
+    const idxT = await where({ condition: eq.c, x: dest.y, y: f32(new Array(n).fill(n)) }, {}); // the one CPU dip
+    eq.c.destroy(); maskF.output.destroy(); dest.y.destroy();
+
+    const idxArr = Array.from(idxT.output.data);
+    const indices = i64(idxArr, [n, 1]);
+    const updates = f32(cat, [n]);
+    const initData = f32(new Array(n + 1).fill(-1), [n + 1]);
+    const scat = await scatternd({ data: initData, indices, updates }, {});
+
+    const jsMatches = cat.filter((v) => v === target).length;
+    const gpuMatches = idxArr.filter((x) => x < n).length;              // everything not sent to the dump slot n
+    const outArr = Array.from(scat.output.data).slice(0, gpuMatches);
+
+    renderCells("ccIn", cat, (v) => (v === target ? "#2dd4bf" : "#334155"));
+    renderCells("ccOut", outArr, () => "#2dd4bf");
+    $("ccCount").textContent = `${jsMatches} of ${n} (kernel-side count agrees: ${gpuMatches})`;
+    window.__result = { ...window.__result, cumsumAxisMode, compaction: { n, target, jsMatches, gpuMatches, output: outArr } };
+  }
+
+  // ---------- 2. run-length encoding ----------
+  async function runRLE() {
+    const n = 64, C = 5, changeProb = 0.25, maxRuns = n;
+    const v = [Math.floor(Math.random() * C)];
+    for (let i = 1; i < n; i++) v.push(Math.random() < changeProb ? Math.floor(Math.random() * C) : v[i - 1]);
+    const shifted = [-1, ...v.slice(0, n - 1)];                          // sentinel forces a boundary at i = 0
+    const ones = new Array(n).fill(1), zeros = new Array(n).fill(0);
+
+    const eqSame = await equal({ a: f32(v), b: f32(shifted) }, { output: "gpu" });       // true where NOT a boundary
+    const boundaryF = await where({ condition: eqSame.c, x: f32(zeros), y: f32(ones) }, { output: "gpu" }); // 1 at boundaries
+    const runId = await doCumsum(boundaryF.output, 0, 1, 0, true);       // exclusive: run number of position i
+    const isBoundary = await equal({ a: boundaryF.output, b: f32(ones) }, { output: "gpu" });
+    const idxT = await where({ condition: isBoundary.c, x: runId.y, y: f32(new Array(n).fill(maxRuns)) }, {});
+    eqSame.c.destroy(); boundaryF.output.destroy(); runId.y.destroy(); isBoundary.c.destroy();
+
+    const indices = i64(Array.from(idxT.output.data), [n, 1]);
+    const updatesPos = f32(Array.from({ length: n }, (_, i) => i), [n]);
+    const updatesVal = f32(v, [n]);
+    const scatStarts = await scatternd({ data: f32(new Array(maxRuns + 1).fill(-1), [maxRuns + 1]), indices, updates: updatesPos }, {});
+    const scatVals = await scatternd({ data: f32(new Array(maxRuns + 1).fill(-1), [maxRuns + 1]), indices, updates: updatesVal }, {});
+
+    const starts = scatStarts.output.data, valsOut = scatVals.output.data;
+    const runs = [];
+    for (let r = 0; r < maxRuns; r++) if (starts[r] >= 0) runs.push({ start: starts[r], val: valsOut[r] });
+    runs.sort((a, b) => a.start - b.start);
+    runs.forEach((r, i) => { r.len = (i + 1 < runs.length ? runs[i + 1].start : n) - r.start; });
+
+    let jsRuns = 0; for (let i = 0; i < n; i++) if (v[i] !== shifted[i]) jsRuns++;
+
+    renderCells("rleIn", v, (val) => PALETTE[val % PALETTE.length]);
+    $("rleOut").innerHTML = runs.map((r) => `<span class="cell" style="width:${16 + r.len * 8}px;background:${PALETTE[r.val % PALETTE.length]}">${r.val}&times;${r.len}</span>`).join("");
+    const lenSum = runs.reduce((s, r) => s + r.len, 0);
+    $("rleCount").innerHTML = `<b>${runs.length}</b> runs (JavaScript count agrees: ${jsRuns}) &middot; lengths sum to <b>${lenSum}</b> of ${n}`;
+    window.__result = { ...window.__result, cumsumAxisMode, rle: { n, gpuRuns: runs.length, jsRuns, lenSum, table: runs.map((r) => [r.val, r.len]) } };
+  }
+
+  // ---------- 3. histogram from a scan ----------
+  async function runHistogram() {
+    const N = 4096, B = 16;
+    const vals = Array.from({ length: N }, () => Math.floor(Math.random() * B));
+
+    const binsRes = await range({ start: f32([0], []), limit: f32([B], []), delta: f32([1], []) },
+      { outputs: { output: { shape: [B], dtype: "float32" } } });
+    const binsArr = Array.from(binsRes.output.data);
+
+    // layout [B, N], scan along axis 1 (the sample axis) — the one CumSum shape this project's own
+    // report measured directly (a row-wise scan over [256, 4096]), so this axis is the safer bet.
+    const valsExp = new Float32Array(B * N), binsExp = new Float32Array(B * N);
+    for (let b = 0; b < B; b++) for (let i = 0; i < N; i++) { valsExp[b * N + i] = vals[i]; binsExp[b * N + i] = binsArr[b]; }
+
+    const isBin = await equal({ a: { data: valsExp, shape: [B, N] }, b: { data: binsExp, shape: [B, N] } }, { output: "gpu" });
+    const onesBN = new Float32Array(B * N).fill(1), zerosBN = new Float32Array(B * N).fill(0);
+    const maskF = await where({ condition: isBin.c, x: { data: onesBN, shape: [B, N] }, y: { data: zerosBN, shape: [B, N] } }, { output: "gpu" });
+    const cum = await doCumsum(maskF.output, 1, 0, 0, false);           // inclusive: last column = the bin's total
+    isBin.c.destroy(); maskF.output.destroy();
+
+    const cumData = cum.y.data;
+    const counts = []; for (let b = 0; b < B; b++) counts.push(Math.round(cumData[b * N + (N - 1)]));
+    const total = counts.reduce((s, c) => s + c, 0);
+    const jsCounts = new Array(B).fill(0); vals.forEach((v) => jsCounts[v]++);
+    const agree = counts.every((c, i) => c === jsCounts[i]);
+
+    const maxC = Math.max(...counts);
+    $("hgBars").innerHTML = counts.map((c, b) => `<div class="bar" style="height:${Math.max(2, Math.round((c / maxC) * 100))}%;background:${PALETTE[b % PALETTE.length]}" title="bin ${b}: ${c}"></div>`).join("");
+    $("hgStat").innerHTML = `N = ${N}, bins = ${B}, sum of counts = <b>${total}</b> (theory: must equal ${N}) &middot; bin-by-bin match with a plain JavaScript count: <b>${agree}</b>`;
+    window.__result = { ...window.__result, cumsumAxisMode, histogram: { N, B, counts, jsCounts, total, agree } };
+  }
+
+  // ---------- 4. variable-sized output allocation ----------
+  async function runAlloc() {
+    const n = 24, maxCount = 4, maxTotal = n * maxCount;
+    const counts = Array.from({ length: n }, () => 1 + Math.floor(Math.random() * maxCount));
+
+    const offsets = await doCumsum(f32(counts), 0, 1, 0, false);       // exclusive: block start for item i
+    const offArr = Array.from(offsets.y.data);
+    const total = offArr[n - 1] + counts[n - 1];
+
+    const indices = i64(offArr, [n, 1]);
+    const updates = f32(Array.from({ length: n }, (_, i) => i), [n]);
+    const initData = f32(new Array(maxTotal).fill(-1), [maxTotal]);
+    const scat = await scatternd({ data: initData, indices, updates }, {});
+
+    const marks = Array.from(scat.output.data).slice(0, total);
+    const owner = []; let cur = -1;
+    for (let j = 0; j < total; j++) { if (marks[j] >= 0) cur = marks[j]; owner.push(cur); }
+    const jsTotal = counts.reduce((s, c) => s + c, 0);
+
+    $("alIn").innerHTML = counts.map((c, i) => `<span class="cell" style="width:${16 + c * 10}px;background:${PALETTE[i % PALETTE.length]}">item ${i}&middot;${c}</span>`).join("");
+    renderCells("alOut", owner, (o) => PALETTE[o % PALETTE.length]);
+    $("alStat").innerHTML = `n = ${n} items &middot; output length <b>${total}</b> of ${maxTotal} allocated (JavaScript sum agrees: ${jsTotal})`;
+    window.__result = { ...window.__result, cumsumAxisMode, allocation: { n, total, jsTotal, offsets: offArr, counts } };
+  }
+
+  $("ccGo").onclick = () => safeRun("compaction", () => runCompaction(true), "cardCompaction");
+  $("ccTarget").onchange = () => safeRun("compaction", () => runCompaction(false), "cardCompaction");
+  $("rleGo").onclick = () => safeRun("rle", runRLE, "cardRLE");
+  $("hgGo").onclick = () => safeRun("histogram", runHistogram, "cardHistogram");
+  $("alGo").onclick = () => safeRun("allocation", runAlloc, "cardAlloc");
+
+  const okC = await safeRun("compaction", () => runCompaction(true), "cardCompaction");
+  const okR = await safeRun("rle", runRLE, "cardRLE");
+  const okH = await safeRun("histogram", runHistogram, "cardHistogram");
+  const okA = await safeRun("allocation", runAlloc, "cardAlloc");
+  say(okC && okR && okH && okA ? "done — four scans, five kernels" : "done with errors — see the red text in the failing card");
+} catch (e) { fail(e); }
+</script>
+</html>

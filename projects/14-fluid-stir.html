@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Real-time fluid you can stir with the mouse</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;background:#000;touch-action:none;cursor:crosshair}
+  button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  input[type=range]{width:110px;padding:0;vertical-align:middle}
+  input[type=checkbox]{vertical-align:middle}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:280px;font-size:.9rem;align-self:flex-start}
+  .stat b{color:#2dd4bf;font-weight:600;font-size:1.05rem}
+  .stat div{margin-bottom:6px}
+  table{border-collapse:collapse;font-size:.8rem;margin-top:2px}
+  th,td{border:1px solid #334155;padding:3px 7px;text-align:right}
+  th{color:#94a3b8;font-weight:500}
+  td:first-child,th:first-child{text-align:left}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Real-time fluid you can stir with the mouse</h1>
+<p>Drag inside the box. Dye follows your hand, rolls into vortices and drifts. Every part of the solver is a kernel call: the fluid moves in one sampling call, and the pressure that keeps it incompressible is a stack of identical convolutions. Nothing here is a fluid library.</p>
+<div class="row" style="margin-bottom:10px">
+  <label>grid <select id="grid"><option selected>128</option><option>256</option></select></label>
+  <label>Jacobi sweeps <input id="jac" type="range" min="0" max="40" step="1" value="20"> <b id="jacv">20</b></label>
+  <label>time step <input id="dt" type="range" min="0.5" max="2" step="0.1" value="1.0"> <b id="dtv">1.0</b></label>
+  <label>dye fade <input id="fade" type="range" min="0.960" max="1.000" step="0.002" value="0.994"> <b id="fadev">0.994</b></label>
+  <label>show <select id="view"><option value="dye" selected>dye</option><option value="curl">vorticity</option><option value="div">left-over divergence</option></select></label>
+  <label><input id="auto" type="checkbox" checked> auto stir</label>
+  <button id="reset">Restart</button><button id="pause">Pause</button>
+</div>
+<div id="st">loading the library&hellip;</div>
+<div class="row" style="align-items:flex-start">
+  <canvas id="c" width="560" height="560"></canvas>
+  <div class="stat">
+    <div>steps <b id="steps">0</b> &nbsp; steps / s <b id="sps">–</b></div>
+    <div>kernel calls per step <b id="calls">–</b></div>
+    <div>RMS divergence in <b id="d0">–</b></div>
+    <div>RMS divergence out <b id="d1">–</b></div>
+    <div>fraction left <b id="dr">–</b></div>
+    <div style="color:#94a3b8;margin-top:10px">Poisson check &mdash; 20 Jacobi sweeps on one sine
+      mode, pressure started from zero. The residual must fall by cos(&pi;j/(N+1)) a sweep.</div>
+    <table id="pt"><tr><th>mode j</th><th>measured</th><th>predicted</th><th>ratio</th></tr></table>
+    <div style="color:#94a3b8;margin-top:10px">drag to push the fluid<br>the pressure solve never finishes &mdash;<br>move the sweep slider and watch what is left</div>
+  </div>
+</div>
+<h2>The science</h2>
+<p>The fluid follows Stam's stable method, which splits one step into moving the fluid along its own velocity, then correcting that velocity so it neither creates nor destroys volume. The correction is the expensive half. It requires solving a Poisson equation, and it is solved here by Jacobi iteration: repeatedly replacing every cell with the average of its four neighbours plus a source term. Each sweep is one <code>Conv</code> call.</p>
+<p>Jacobi's behaviour is exactly predictable, and the page checks itself against that prediction before any animation begins. Zero padding in <code>Conv</code> acts as a fixed boundary, which makes a sine field an exact eigenvector of the discrete Laplacian. For such a field, each sweep multiplies the leftover error by precisely cos(&pi;j/(N+1)), where j counts how many oscillations the field has across the grid. After 20 sweeps the error must therefore be that factor raised to the twentieth power.</p>
+<p>Measured on a 128&sup2; grid, against theory: the smooth mode j=4 leaves 0.9093321970 where theory says 0.9093321930; the middle mode j=32 leaves 0.0011022035 against 0.0011022045; the roughest mode j=120 leaves 0.6161289335 against 0.6161289248. All three agree to within about 1e-6 of the predicted ratio.</p>
+<p>The shape of those three numbers is the lesson. Jacobi almost eliminates the middle frequency and barely touches either the smoothest or the roughest, so the fluid is never truly free of divergence, only free of the part Jacobi is good at removing. Set the sweep count to zero and the pressure is identically zero, the correction subtracts nothing, and the retained divergence reads exactly 1.</p>
+
+<p style="margin-top:14px">Per step, in order. A Gaussian source: <code>Sub</code> and <code>Mul</code> build the squared distance to the pointer, <code>Exp</code> turns it into a blob, and <code>Mul</code>, <code>Concat</code> and <code>Add</code> push velocity and dye into the field. Advection: <code>Transpose</code> lays the velocity out as sampling coordinates, <code>Mul</code> and <code>Add</code> step every cell centre backwards down the flow, and two <code>GridSample</code> calls read the velocity and the dye from where each parcel came from. Projection: one <code>Conv</code> takes the divergence with a forward difference, <code>Mul</code> and <code>Concat</code> pack the right-hand side into a second channel beside the pressure so that a single 2&times;2&times;3&times;3 <code>Conv</code> is one whole Jacobi sweep, and a last <code>Conv</code> plus <code>Sub</code> subtracts a backward-difference gradient. Forward difference in and backward difference out compose into exactly the five-point Laplacian the sweeps solve, which is why the two halves of the projection agree. Pressure starts from zero every step, so the slider is the entire solve. Two more <code>Conv</code> calls measure the divergence that survived and the vorticity, and one <code>Concat</code> packs dye, divergence and curl into a single readback. That is 28 + <i>K</i> calls a step for <i>K</i> sweeps, and only the last one leaves the card.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 8 of the 207:</b> <code>Add</code> <code>Concat</code> <code>Conv</code> <code>Exp</code> <code>GridSample</code> <code>Mul</code> <code>Sub</code> <code>Transpose</code></p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [add, sub, mul, exp, concat, transpose, gridsample, conv] =
+    await Promise.all(["Add", "Sub", "Mul", "Exp", "Concat", "Transpose", "GridSample", "Conv"].map(op));
+  const $ = (id) => document.getElementById(id), c = $("c"), g = c.getContext("2d"), DISP = 560;
+  const f32 = (a, shape) => ({ data: a instanceof Float32Array ? a : Float32Array.from(a), shape });
+  const one = (v) => f32([v], [1]);
+  const keep = async (t) => (await add({ a: t, b: one(0) }, { output: "gpu" })).c;   // upload once, keep resident
+
+  // ---- the stencils, written as convolution weights ------------------------------------------
+  // Conv here is cross-correlation with pads 1, so weight entry [kh][kw] reads x[h+kh-1][w+kw-1].
+  const S = (blocks) => blocks.flat().flat();            // 3x3 blocks, row kh, column kw
+  const Z3   = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const DX_F = [[0, 0, 0], [0, -1, 1], [0, 0, 0]];       // forward difference along W
+  const DY_F = [[0, 0, 0], [0, -1, 0], [0, 1, 0]];       // forward difference along H
+  const DX_B = [[0, 0, 0], [-1, 1, 0], [0, 0, 0]];       // backward difference along W
+  const DY_B = [[0, -1, 0], [0, 1, 0], [0, 0, 0]];       // backward difference along H
+  const DX_C = [[0, 0, 0], [-0.5, 0, 0.5], [0, 0, 0]];   // centred difference along W
+  const NDY_C= [[0, 0.5, 0], [0, 0, 0], [0, -0.5, 0]];   // minus the centred difference along H
+  const NBR4 = [[0, .25, 0], [.25, 0, .25], [0, .25, 0]];// a quarter of the four-neighbour sum
+  const EYE  = [[0, 0, 0], [0, 1, 0], [0, 0, 0]];
+  const MLAP = [[0, -1, 0], [-1, 4, -1], [0, -1, 0]];    // minus the five-point Laplacian
+  const M4   = [[0, 0, 0], [0, -4, 0], [0, 0, 0]];
+
+  // vel is [1,2,N,N]: channel 0 runs along W (screen x), channel 1 along H (screen y, downwards).
+  const W_DIV  = f32(S([DX_F, DY_F]), [1, 2, 3, 3]);       // vel -> div u, forward difference
+  const W_CURL = f32(S([NDY_C, DX_C]), [1, 2, 3, 3]);      // vel -> dv/dx - du/dy
+  // the packed pressure tensor is [1,2,N,N]: channel 0 is p, channel 1 is r = -div/4, held fixed.
+  const W_JAC  = f32(S([NBR4, EYE, Z3, EYE]), [2, 2, 3, 3]);  // one sweep; r passes through untouched
+  const W_GRAD = f32(S([DX_B, Z3, DY_B, Z3]), [2, 2, 3, 3]);  // packed -> backward-difference grad p
+  const W_RES  = f32(S([MLAP, M4]), [1, 2, 3, 3]);            // packed -> residual, div - lap(p)
+
+  let N, vel, dye, gbase, xs, ys, zeros, Wdiv, Wcurl, Wjac, Wgrad, Wres;
+  let steps = 0, paused = false, gen = 0, busy = false, t0 = 0, poisson = [], calls = 0;
+  const ptr = { x: 0, y: 0, dx: 0, dy: 0, down: false, seen: false };
+  const RAD = 0.055, AFORCE = 0.15, MFORCE = 0.22, MCLAMP = 8, DYE = 0.9, DAMP = 0.9985;
+  const CHECK_K = 20;
+
+  const cv = (x, w, shape, gpu) =>                       // one convolution, pads 1, same size out
+    conv({ x, w }, { attrs: { pads: [1, 1, 1, 1], kernel_shape: [3, 3] },
+                     outputs: { y: { shape, dtype: "float32" } }, ...(gpu === false ? {} : { output: "gpu" }) });
+
+  // ---- the pressure solve, shared by the fluid and by the startup check -----------------------
+  // Jacobi for lap(p) = d is p <- (four-neighbour sum - d) / 4. Packing r = -d/4 into a second
+  // channel makes every sweep exactly one Conv, with no separate add of the right-hand side.
+  async function solve(div, iters, held) {
+    const h = (t) => { held.push(t); return t; };
+    const r = h((await mul({ a: div, b: one(-0.25) }, { output: "gpu" })).c);
+    let pr = h((await concat({ a: zeros, b: r }, { attrs: { axis: 1 }, output: "gpu" })).c);
+    for (let i = 0; i < iters; i++) pr = h((await cv(pr, Wjac, [1, 2, N, N])).y);
+    return pr;                                           // [1,2,N,N] = [p, -d/4]
+  }
+
+  // ---- startup check: one sine mode, where the answer is known in closed form -----------------
+  // Zero padding is a Dirichlet edge, so the eigenvectors of the discrete Laplacian are
+  // sin(pi j (i+1)/(N+1)). On mode (j,j) the Jacobi residual must shrink by exactly
+  // cos(pi j/(N+1)) each sweep, whatever the grid size.
+  async function check(iters) {
+    const out = [];
+    for (const j of [Math.round(N / 32), Math.round(N / 4), Math.round(N * 15 / 16)]) {
+      const d = new Float32Array(N * N);
+      let s0 = 0;
+      for (let hh = 0; hh < N; hh++) {
+        const sy = Math.sin(Math.PI * j * (hh + 1) / (N + 1));
+        for (let ww = 0; ww < N; ww++) {
+          const v = sy * Math.sin(Math.PI * j * (ww + 1) / (N + 1));
+          d[hh * N + ww] = v; s0 += v * v;
+        }
+      }
+      const held = [], dt = await keep(f32(d, [1, 1, N, N]));
+      const pr = await solve(dt, iters, held);
+      const res = (await cv(pr, Wres, [1, 1, N, N], false)).y.data;   // the single readback of the check
+      let s1 = 0; for (let i = 0; i < N * N; i++) s1 += res[i] * res[i];
+      held.forEach((t) => t.destroy?.()); dt.destroy?.();
+      const measured = Math.sqrt(s1 / s0);
+      const predicted = Math.pow(Math.abs(Math.cos(Math.PI * j / (N + 1))), iters);
+      out.push({ j, sweeps: iters, measured, predicted, ratio: measured / predicted });
+    }
+    return out;
+  }
+  function showCheck() {
+    const t = $("pt");
+    t.innerHTML = "<tr><th>mode j</th><th>measured</th><th>cos(&pi;j/(N+1))<sup>" +
+      CHECK_K + "</sup></th><th>ratio</th></tr>";
+    for (const r of poisson) t.insertRow().innerHTML =
+      "<td>" + r.j + "</td><td>" + r.measured.toExponential(3) + "</td><td>" +
+      r.predicted.toExponential(3) + "</td><td>" + r.ratio.toFixed(4) + "</td>";
+  }
+
+  // ---- setup ----------------------------------------------------------------------------------
+  async function reset() {
+    gen++; while (busy) await new Promise((r) => setTimeout(r, 5));
+    for (const t of [vel, dye, gbase, xs, ys, zeros, Wdiv, Wcurl, Wjac, Wgrad, Wres]) t?.destroy?.();
+    N = +$("grid").value; steps = 0; calls = 0;
+    say("uploading the stencils…");
+    [Wdiv, Wcurl, Wjac, Wgrad, Wres] = await Promise.all([W_DIV, W_CURL, W_JAC, W_GRAD, W_RES].map(keep));
+    vel = await keep(f32(new Float32Array(2 * N * N), [1, 2, N, N]));
+    dye = await keep(f32(new Float32Array(N * N), [1, 1, N, N]));
+    zeros = await keep(f32(new Float32Array(N * N), [1, 1, N, N]));
+    const gb = new Float32Array(N * N * 2), gx = new Float32Array(N * N), gy = new Float32Array(N * N);
+    for (let hh = 0; hh < N; hh++) for (let ww = 0; ww < N; ww++) {
+      const i = hh * N + ww;
+      gb[i * 2] = (2 * ww + 1) / N - 1;      // align_corners = 0 puts cell centre ww here
+      gb[i * 2 + 1] = (2 * hh + 1) / N - 1;
+      gx[i] = ww; gy[i] = hh;
+    }
+    gbase = await keep(f32(gb, [1, N, N, 2]));
+    xs = await keep(f32(gx, [1, 1, N, N]));
+    ys = await keep(f32(gy, [1, 1, N, N]));
+    say("running the Poisson check…");
+    poisson = await check(CHECK_K); showCheck();
+    window.__result = { N, poisson };
+    t0 = performance.now();
+    say("stir it");
+    frame().catch(fail);
+  }
+
+  // ---- where the push comes from ---------------------------------------------------------------
+  function source() {
+    if (ptr.down && ptr.seen) {
+      const fx = ptr.dx, fy = ptr.dy; ptr.dx *= 0.55; ptr.dy *= 0.55;
+      const m = Math.hypot(fx, fy), s = (m > MCLAMP ? MCLAMP / m : 1) * MFORCE;
+      return { x: ptr.x, y: ptr.y, fu: fx * s, fv: fy * s, dye: DYE * Math.min(1, 0.3 + m * 0.3) };
+    }
+    if (!$("auto").checked) return null;
+    const t = steps * 0.02, rr = 0.3 * N;                 // a source that wanders on a Lissajous path
+    const vx = -0.9 * Math.sin(0.9 * t), vy = 1.3 * Math.cos(1.3 * t), m = Math.hypot(vx, vy) || 1;
+    return { x: N / 2 + rr * Math.cos(0.9 * t), y: N / 2 + rr * Math.sin(1.3 * t),
+             fu: vx / m * AFORCE, fv: vy / m * AFORCE, dye: DYE };
+  }
+
+  // ---- one step of the solver ------------------------------------------------------------------
+  async function step(iters) {
+    const held = [], h = (t) => { held.push(t); return t; };
+    const dt = +$("dt").value, fade = +$("fade").value;
+    let v = vel, d = dye, n = 0;
+
+    // 1. a Gaussian blob of velocity and dye where the pointer is
+    const src = source();
+    if (src) {
+      const ax = h((await sub({ a: xs, b: one(src.x) }, { output: "gpu" })).c);
+      const ay = h((await sub({ a: ys, b: one(src.y) }, { output: "gpu" })).c);
+      const ax2 = h((await mul({ a: ax, b: ax }, { output: "gpu" })).c);
+      const ay2 = h((await mul({ a: ay, b: ay }, { output: "gpu" })).c);
+      const r2 = h((await add({ a: ax2, b: ay2 }, { output: "gpu" })).c);
+      const e = h((await mul({ a: r2, b: one(-1 / ((RAD * N) * (RAD * N))) }, { output: "gpu" })).c);
+      const blob = h((await exp({ x: e }, { output: "gpu" })).y);
+      const bu = h((await mul({ a: blob, b: one(src.fu) }, { output: "gpu" })).c);
+      const bv = h((await mul({ a: blob, b: one(src.fv) }, { output: "gpu" })).c);
+      const fvec = h((await concat({ a: bu, b: bv }, { attrs: { axis: 1 }, output: "gpu" })).c);
+      v = h((await add({ a: v, b: fvec }, { output: "gpu" })).c);
+      const bd = h((await mul({ a: blob, b: one(src.dye) }, { output: "gpu" })).c);
+      d = h((await add({ a: d, b: bd }, { output: "gpu" })).c);
+      n += 13;
+    }
+
+    // 2. semi-Lagrangian advection. Trace every cell centre back down the flow and read what was
+    //    there. One cell is 2/N wide in GridSample coordinates, so the offset is -2*dt*u/N.
+    const vt = h((await transpose({ x: v }, { attrs: { perm: [0, 2, 3, 1] },
+      outputs: { y: { shape: [1, N, N, 2], dtype: "float32" } }, output: "gpu" })).y);
+    const off = h((await mul({ a: vt, b: one(-2 * dt / N) }, { output: "gpu" })).c);
+    const grid = h((await add({ a: gbase, b: off }, { output: "gpu" })).c);
+    const sample = (x, ch) => gridsample({ x, grid },
+      { attrs: { mode: "linear", padding_mode: "zeros", align_corners: 0 },
+        outputs: { y: { shape: [1, ch, N, N], dtype: "float32" } }, output: "gpu" });
+    const va = h((await sample(v, 2)).y);
+    const da = h((await sample(d, 1)).y);
+    const vd = h((await mul({ a: va, b: one(DAMP) }, { output: "gpu" })).c);
+    const df = (await mul({ a: da, b: one(fade) }, { output: "gpu" })).c;      // survives as the new dye
+    n += 7;
+
+    // 3. projection. Divergence by forward difference, solve lap(p) = div, then subtract a
+    //    backward-difference gradient. Forward then backward composes into exactly the five-point
+    //    Laplacian the sweeps use, so the operator that measures and the operator that corrects agree.
+    const div0 = h((await cv(vd, Wdiv, [1, 1, N, N])).y);
+    const pr = await solve(div0, iters, held);
+    const gp = h((await cv(pr, Wgrad, [1, 2, N, N])).y);
+    const vn = (await sub({ a: vd, b: gp }, { output: "gpu" })).c;             // survives as the new velocity
+    n += iters + 5;
+
+    // 4. what survived, plus the vorticity, packed with the dye into a single readback
+    const div1 = h((await cv(vn, Wdiv, [1, 1, N, N])).y);
+    const curl = h((await cv(vn, Wcurl, [1, 1, N, N])).y);
+    const pack = (await concat({ a: df, b: div0, d: div1, e: curl }, { attrs: { axis: 1 } })).c.data;
+    n += 3;
+
+    held.forEach((t) => t.destroy?.());
+    vel.destroy?.(); dye.destroy?.();
+    vel = vn; dye = df; calls = n;
+    return pack;
+  }
+
+  // ---- the loop --------------------------------------------------------------------------------
+  async function frame() {
+    const my = gen, iters = +$("jac").value;
+    busy = true;
+    let pack = null;
+    try { if (!paused) pack = await step(iters); } finally { busy = false; }
+    if (my !== gen) return;
+    if (pack) { steps++; draw(pack, iters); }
+    setTimeout(() => { if (my === gen) frame().catch(fail); }, 0);
+  }
+
+  function draw(raw, iters) {
+    const pack = raw instanceof Float32Array ? raw : Float32Array.from(raw);
+    const n2 = N * N, D = pack.subarray(0, n2), B = pack.subarray(n2, 2 * n2),
+          A = pack.subarray(2 * n2, 3 * n2), C = pack.subarray(3 * n2, 4 * n2);
+    // RMS divergence over the interior only. On the last row and column the forward difference
+    // reads a padded zero, so there the two operators stop composing into the same Laplacian.
+    let s0 = 0, s1 = 0, cnt = 0;
+    for (let hh = 2; hh < N - 2; hh++) for (let ww = 2; ww < N - 2; ww++) {
+      const i = hh * N + ww; s0 += B[i] * B[i]; s1 += A[i] * A[i]; cnt++;
+    }
+    const divIn = Math.sqrt(s0 / cnt), divOut = Math.sqrt(s1 / cnt);
+    let dmax = 0, dtot = 0;
+    for (let i = 0; i < n2; i++) { dtot += D[i]; if (D[i] > dmax) dmax = D[i]; }
+    const img = g.createImageData(N, N), p = img.data, view = $("view").value;
+    if (view === "dye") {
+      const sc = 1 / (dtot / n2 * 5 + 1e-6);        // expose against the mean, or the source hides the wisps
+      for (let i = 0; i < n2; i++) {
+        const t = Math.min(1, Math.max(0, D[i] * sc)), q = Math.sqrt(t);
+        p[i * 4]     = 255 * Math.min(1, Math.max(0, (q - 0.42) * 2.3));
+        p[i * 4 + 1] = 255 * Math.min(1, q * 1.1);
+        p[i * 4 + 2] = 255 * Math.min(1, q * (1.3 - q) * 1.15 + q * q * q * 0.6);
+        p[i * 4 + 3] = 255;
+      }
+    } else {
+      const F = view === "curl" ? C : A;
+      let m = 1e-9; for (let i = 0; i < n2; i++) { const a = Math.abs(F[i]); if (a > m) m = a; }
+      for (let i = 0; i < n2; i++) {
+        const t = Math.max(-1, Math.min(1, F[i] / m)), a = Math.pow(Math.abs(t), 0.55);
+        p[i * 4]     = t > 0 ? 251 * a : 60 * a;
+        p[i * 4 + 1] = t > 0 ? 146 * a : 190 * a;
+        p[i * 4 + 2] = t > 0 ? 60 * a : 250 * a;
+        p[i * 4 + 3] = 255;
+      }
+    }
+    const tmp = document.createElement("canvas"); tmp.width = tmp.height = N;
+    tmp.getContext("2d").putImageData(img, 0, 0);
+    g.imageSmoothingEnabled = true; g.clearRect(0, 0, DISP, DISP); g.drawImage(tmp, 0, 0, DISP, DISP);
+
+    $("steps").textContent = steps;
+    $("calls").textContent = calls;
+    $("d0").textContent = divIn.toExponential(3);
+    $("d1").textContent = divOut.toExponential(3);
+    $("dr").textContent = divIn > 1e-12 ? (divOut / divIn).toFixed(4) : "–";
+    const el = (performance.now() - t0) / 1000;
+    if (el > 0.5) $("sps").textContent = (steps / el).toFixed(0);
+    window.__result = {
+      N, sweeps: iters, steps, stepsPerSec: el > 0.5 ? steps / el : null, callsPerStep: calls,
+      divIn, divOut, divKept: divIn > 1e-12 ? divOut / divIn : null,
+      dyeMax: dmax, dyeTotal: dtot, poisson
+    };
+  }
+
+  // ---- pointer ---------------------------------------------------------------------------------
+  const pos = (e) => { const r = c.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * N, y: (e.clientY - r.top) / r.height * N }; };
+  c.addEventListener("pointerdown", (e) => { const q = pos(e); ptr.x = q.x; ptr.y = q.y;
+    ptr.dx = ptr.dy = 0; ptr.down = true; ptr.seen = false; c.setPointerCapture(e.pointerId); e.preventDefault(); });
+  c.addEventListener("pointermove", (e) => { if (!ptr.down) return; const q = pos(e);
+    ptr.dx += q.x - ptr.x; ptr.dy += q.y - ptr.y; ptr.x = q.x; ptr.y = q.y; ptr.seen = true; });
+  // pointer capture keeps the drag alive off the canvas, so do not listen for pointerleave
+  for (const ev of ["pointerup", "pointercancel"])
+    c.addEventListener(ev, () => { ptr.down = false; });
+
+  for (const [id, fmt] of [["jac", (v) => v], ["dt", (v) => (+v).toFixed(1)], ["fade", (v) => (+v).toFixed(3)]])
+    $(id).oninput = () => { $(id + "v").textContent = fmt($(id).value); };
+  $("reset").onclick = () => reset().catch(fail);
+  $("grid").onchange = () => reset().catch(fail);
+  $("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "Resume" : "Pause"; };
+  await reset();
+} catch (e) { fail(e); }
+</script>
+</html>

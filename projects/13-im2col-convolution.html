@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>Convolution unmasked — im2col, one matrix multiply, and back</title>
+<style>
+  body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
+  h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
+  p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
+  canvas{border:1px solid #334155;border-radius:6px;background:#000}
+  button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
+  button:hover{border-color:#2dd4bf}
+  #st{color:#2dd4bf;font-size:.85rem;min-height:1.4em}
+  .err{color:#f87171;white-space:pre-wrap}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .panel{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .panel span{color:#94a3b8;font-size:.82rem;text-align:center;max-width:190px}
+  .stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;min-width:230px;font-size:.9rem}
+  .stat b{color:#2dd4bf;font-weight:600}
+  .stat div{margin-bottom:6px}
+  code{color:#2dd4bf}
+</style>
+
+<h1>Convolution unmasked — im2col, one matrix multiply, and back</h1>
+<p>Two panels compute the same filtered image. The left panel calls <code>Conv</code> directly. The right panel never calls it: for every output pixel it <code>Gather</code>s the nine pixels under the 3&times;3 window into one big column matrix, multiplies that matrix by the flattened kernel with a single <code>MatMul</code>, and folds the flat result back into an image with <code>Col2Im</code>. Both panels read the same nine numbers as their filter. Switch the preset and both panels redraw.</p>
+
+<div class="row" style="margin-bottom:10px;align-items:center">
+  <label>filter <select id="preset">
+    <option>Gaussian blur</option>
+    <option>Box blur</option>
+    <option>Sharpen</option>
+    <option>Sobel edge (horizontal)</option>
+    <option>Emboss</option>
+  </select></label>
+</div>
+<div id="st">loading the library&hellip;</div>
+
+<div class="row" style="margin-top:10px">
+  <div class="panel"><span>source, 128&times;128</span><canvas id="csrc" width="128" height="128" style="width:210px;height:210px"></canvas></div>
+  <div class="panel"><span>direct &mdash; one <code>Conv</code> call</span><canvas id="cdirect" width="128" height="128" style="width:210px;height:210px"></canvas></div>
+  <div class="panel"><span>im2col &mdash; <code>Gather</code>, <code>MatMul</code>, <code>Col2Im</code></span><canvas id="cim2col" width="128" height="128" style="width:210px;height:210px"></canvas></div>
+  <div class="stat">
+    <div>filter <b id="preset_lbl">&ndash;</b></div>
+    <div>image &times; patch matrix <b id="dims">&ndash;</b></div>
+    <div>kernel calls <b id="calls">&ndash;</b></div>
+    <div>max |direct &minus; im2col| <b id="maxdiff">&ndash;</b></div>
+    <div>mean |direct &minus; im2col| <b id="meandiff">&ndash;</b></div>
+    <div style="color:#94a3b8;margin-top:10px">Direct and im2col panels share one brightness scale, taken from the direct panel, so a real mismatch would be visible, not just rescaled away.</div>
+  </div>
+</div>
+
+<h2>The science</h2>
+<p>A convolution slides a small filter over an image and, at every position, multiplies the overlapping pixels by the filter weights and adds them up. That is a matrix multiply wearing a disguise, and im2col removes the disguise. Every 3&times;3 window the filter will ever see is copied out as a column of nine numbers, so a 128&times;128 output becomes a 9&times;16384 matrix. The filter flattens to a single row of nine. One matrix multiply of that row against that matrix computes every output pixel at once, and the result is folded back into an image.</p>
+<p>Both routes run here on the same picture. The left panel calls <code>Conv</code> once. The right panel never calls <code>Conv</code> at all: one <code>Gather</code> with a precomputed index tensor builds the column matrix, one <code>MatMul</code> does every multiply and add, and <code>Col2Im</code> folds the column back into a picture.</p>
+<p>The two disagree by at most <b>1.192e-7</b> across all 16384 pixels, with a mean of 1.5e-8. That number is not merely small; it is exactly 2<sup>&minus;23</sup>, one unit in the last place of a float32 near 1.0. The two routes compute the same nine products and differ only in the order they add them, so the smallest representable disagreement is also the largest one that appears. The identity is exact; only the rounding is not.</p>
+<p>The cost is memory. Each pixel is copied into nine columns, so the intermediate matrix is nine times the size of the image. That is the trade im2col makes: it buys a single dense matrix multiply, which hardware is very good at, by spending memory it did not previously need.</p>
+
+<p style="margin-top:14px">The source image is padded by one pixel of zeros on every side, once, in JavaScript, so both panels start from the same 130&times;130 buffer and neither has to special-case the edges. The direct panel is one <code>Conv</code> call with <code>pads: [0,0,0,0]</code> against that padded buffer, kernel_shape 3&times;3. The im2col panel never touches <code>Conv</code>: a single <code>Gather</code> call reads all nine shifted copies of the padded image at once, using an index tensor of shape [9, 128&times;128] computed once in JavaScript (index k = i&times;3+j reads the pixel offset by kernel row i, column j &mdash; the same order the flattened kernel uses), producing the full im2col matrix in one shot. One <code>MatMul</code> of the flattened 1&times;9 kernel against that matrix does every multiply-and-accumulate the convolution needs. <code>Reshape</code> adds back the batch and channel dimensions <code>MatMul</code> does not carry, and <code>Col2Im</code> folds the [1,1,128&times;128] column back into a [1,1,128,128] image &mdash; with a block_shape of [1,1] there is nothing to overlap and sum, so the fold is exact. <code>Sub</code> then <code>Abs</code> compute the per-pixel gap between the two panels on the card; only the final numbers and the two images are read back to JavaScript.</p>
+<p style="margin-top:14px"><b style="color:#fb923c">Kernels used, 7 of the 207:</b> <code>Abs</code> <code>Col2Im</code> <code>Conv</code> <code>Gather</code> <code>MatMul</code> <code>Reshape</code> <code>Sub</code></p>
+
+<script type="module">
+const st = document.getElementById("st");
+const say = (m) => { st.textContent = m; window.__status = m; };
+const fail = (e) => { st.className = "err"; say(e.stack || e.message || e); window.__error = String(e.message || e); };
+try {
+  const K = await import("https://cdn.jsdelivr.net/npm/@huggingface/kernels@preview/+esm");
+  const op = (n) => K.getKernel("webgpu-kernels/ai.onnx." + n, { version: 1 });
+  const [conv, gather, matmul, reshape, col2im, sub, abs] =
+    await Promise.all(["Conv", "Gather", "MatMul", "Reshape", "Col2Im", "Sub", "Abs"].map(op));
+  const $ = (id) => document.getElementById(id);
+  const H = 128, W = 128, PH = H + 2, PW = W + 2;
+  const shp = (dims) => ({ data: BigInt64Array.from(dims.map(BigInt)), shape: [dims.length], dtype: "int64" });
+
+  const PRESETS = {
+    "Gaussian blur": [1, 2, 1, 2, 4, 2, 1, 2, 1].map((v) => v / 16),
+    "Box blur": Array(9).fill(1 / 9),
+    "Sharpen": [0, -1, 0, -1, 5, -1, 0, -1, 0],
+    "Sobel edge (horizontal)": [-1, 0, 1, -2, 0, 2, -1, 0, 1],
+    "Emboss": [-2, -1, 0, -1, 1, 1, 0, 1, 2],
+  };
+
+  // a synthetic test image: soft waves, a checkerboard, a bright disc and a dark disc —
+  // enough structure that blur, sharpen and edge kernels all look different on it.
+  function makeImage() {
+    const img = new Float32Array(H * W);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const u = x / W, v = y / H;
+        let val = 0.5 + 0.22 * Math.sin(u * 20) + 0.18 * Math.cos(v * 16 + u * 4);
+        val += (((x / 14) | 0) + ((y / 14) | 0)) % 2 ? 0.12 : -0.12;
+        const dx = x - W * 0.68, dy = y - H * 0.28, r = Math.hypot(dx, dy), rad = W * 0.11;
+        if (r < rad) val += 0.5 * (1 - r / rad);
+        const dx2 = x - W * 0.22, dy2 = y - H * 0.75, r2 = Math.hypot(dx2, dy2), rad2 = W * 0.08;
+        if (r2 < rad2) val -= 0.5 * (1 - r2 / rad2);
+        img[y * W + x] = Math.min(1, Math.max(0, val));
+      }
+    }
+    return img;
+  }
+  function padImage(img) {
+    const p = new Float32Array(PH * PW);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) p[(y + 1) * PW + (x + 1)] = img[y * W + x];
+    return p;
+  }
+  function buildIndices() {
+    const idx = new Int32Array(9 * H * W);
+    for (let k = 0; k < 9; k++) {
+      const i = (k / 3) | 0, j = k % 3, base = k * H * W;
+      for (let y = 0; y < H; y++) {
+        const rowOff = (y + i) * PW;
+        for (let x = 0; x < W; x++) idx[base + y * W + x] = rowOff + (x + j);
+      }
+    }
+    return idx;
+  }
+  function renderGray(canvas, data, lo, hi) {
+    const g = canvas.getContext("2d"), img = g.createImageData(W, H), d = img.data;
+    const scale = hi > lo ? 255 / (hi - lo) : 0;
+    for (let i = 0; i < H * W; i++) {
+      const v = Math.max(0, Math.min(255, (data[i] - lo) * scale));
+      d[i * 4] = v; d[i * 4 + 1] = v; d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+
+  const srcImg = makeImage();
+  const padFlat = padImage(srcImg);
+  const idxArr = buildIndices();
+  renderGray($("csrc"), srcImg, 0, 1);
+
+  let busy = false, again = false;
+  async function compute() {
+    const name = $("preset").value, K9 = PRESETS[name];
+    const t0 = performance.now();
+    const Wfull = { data: Float32Array.from(K9), shape: [1, 1, 3, 3] };
+    const Wflat = { data: Float32Array.from(K9), shape: [1, 9] };
+    const Xpad = { data: padFlat, shape: [1, 1, PH, PW] };
+    const XpadFlat = { data: padFlat, shape: [PH * PW] };
+    const idxT = { data: idxArr, shape: [9, H * W] };
+    const zero = { data: new Float32Array([0]), shape: [1] };
+
+    // left panel: the convolution kernel, once
+    const convRes = await conv({ x: Xpad, w: Wfull },
+      { attrs: { pads: [0, 0, 0, 0], kernel_shape: [3, 3], strides: [1, 1] },
+        outputs: { y: { shape: [1, 1, H, W], dtype: "float32" } }, output: "gpu" });
+
+    // right panel: im2col by one Gather, the convolution itself by one MatMul, then Col2Im folds it back
+    const patchesRes = await gather({ data: XpadFlat, indices: idxT }, { attrs: { axis: 0 }, output: "gpu" });
+    const patches = patchesRes.y ?? patchesRes.output;
+    const mm = await matmul({ a: Wflat, b: patches }, { output: "gpu" });
+    const reshaped = await reshape({ data: mm.y, shape: shp([1, 1, H * W]) },
+      { outputs: { reshaped: { shape: [1, 1, H * W], dtype: "float32" } }, output: "gpu" });
+    // Col2Im's manifest: inputs are input/image_shape/block_shape, output is "output" — measured, not guessed.
+    const col2imRes = await col2im({ input: reshaped.reshaped, image_shape: shp([H, W]), block_shape: shp([1, 1]) },
+      { attrs: { strides: [1, 1], pads: [0, 0, 0, 0], dilations: [1, 1] },
+        outputs: { output: { shape: [1, 1, H, W], dtype: "float32" } }, output: "gpu" });
+    const col2imOut = col2imRes.output;
+
+    // the comparison, on the card, then the only reads: two images and the diff
+    const diffGpu = await sub({ a: convRes.y, b: col2imOut }, { output: "gpu" });
+    const absRes = await abs({ x: diffGpu.c });
+    const convCpu = await sub({ a: convRes.y, b: zero });
+    const colCpu = await sub({ a: col2imOut, b: zero });
+
+    [patches, mm.y, reshaped.reshaped].forEach((t) => t.destroy());
+    diffGpu.c.destroy(); convRes.y.destroy(); col2imOut.destroy();
+
+    const dt = performance.now() - t0;
+    const absData = absRes.y.data, n = absData.length;
+    let maxD = 0, sumD = 0;
+    for (let i = 0; i < n; i++) { const v = absData[i]; if (v > maxD) maxD = v; sumD += v; }
+    const meanD = sumD / n;
+
+    const convData = convCpu.c.data, colData = colCpu.c.data;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < n; i++) { if (convData[i] < lo) lo = convData[i]; if (convData[i] > hi) hi = convData[i]; }
+    renderGray($("cdirect"), convData, lo, hi);
+    renderGray($("cim2col"), colData, lo, hi);
+
+    $("preset_lbl").textContent = name;
+    $("dims").textContent = `${H}×${W}, patches 9×${H * W}`;
+    $("calls").textContent = "7";
+    $("maxdiff").textContent = maxD.toExponential(3);
+    $("meandiff").textContent = meanD.toExponential(3);
+    window.__result = { preset: name, H, W, maxAbsDiff: maxD, meanAbsDiff: meanD, kernelCalls: 7, ms: dt };
+    say(`${name}: max |direct − im2col| = ${maxD.toExponential(3)} over ${n} pixels, ${dt.toFixed(1)} ms`);
+  }
+  const go = () => { if (busy) { again = true; return; } busy = true; compute().catch(fail).finally(() => { busy = false; if (again) { again = false; go(); } }); };
+  $("preset").onchange = go;
+  go();
+} catch (e) { fail(e); }
+</script>
+</html>

@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>WebGPU kernel projects — eleven pages</title>
+<title>WebGPU kernel projects — sixteen pages</title>
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:28px 24px 60px;max-width:1100px}
   h1{color:#fb923c;font-size:1.5rem;margin:0 0 6px}
@@ -23,7 +23,7 @@
   footer a{color:#2dd4bf}
 </style>
 
-<h1>Eleven WebGPU kernel projects</h1>
+<h1>Sixteen WebGPU kernel projects</h1>
 <p class="lede">Each page is one self-contained HTML file. It loads <code>@huggingface/kernels@preview</code> from jsDelivr, runs on the GPU in this tab, and needs no npm, no bundler and no build step. Open this index over <code>http://</code>, not <code>file://</code> — the module import fails on a file URL.</p>
 <p class="lede">The result under each title was measured once on an RTX 3050. Read every number as &plusmn;10%.</p>
 <p id="gpu">checking WebGPU&hellip;</p>
@@ -92,6 +92,31 @@
     <div class="n">Catalogue 104 &middot; score 85</div>
     <div class="t">Why the stable form of softmax exists</div>
     <p class="r">The sum overflows at 88.2645 and exp at 88.7228. Between them the naive panel returns eight zeros and lights no red. The stable form holds to 5.9e-8 from &minus;120 to 120.</p>
+  </a></li>
+  <li><a class="card" href="12-seam-carving.html">
+    <div class="n">Catalogue 8 &middot; score 84</div>
+    <div class="t">Seam carving &mdash; the photo shrinks and the subject does not</div>
+    <p class="r">77 seams removed: the figure still spans 25 columns, where a plain resize leaves it 17. 564 calls a seam, 0.22 seams/s.</p>
+  </a></li>
+  <li><a class="card" href="13-im2col-convolution.html">
+    <div class="n">Catalogue 11 &middot; score 84</div>
+    <div class="t">Convolution unmasked &mdash; im2col, one matrix multiply, and back</div>
+    <p class="r">Direct Conv against Gather + MatMul + Col2Im: max difference 1.192e-7 over 16384 pixels, which is exactly one float32 ulp.</p>
+  </a></li>
+  <li><a class="card" href="14-fluid-stir.html">
+    <div class="n">Catalogue 15 &middot; score 84</div>
+    <div class="t">Real-time fluid you can stir with the mouse</div>
+    <p class="r">Jacobi leaves 0.9093, 0.0011 and 0.6161 of three sine modes after 20 sweeps, each within 1e-6 of theory. 36.5 steps/s at 128&sup2;.</p>
+  </a></li>
+  <li><a class="card" href="15-the-scan.html">
+    <div class="n">Catalogue 91 &middot; score 84</div>
+    <div class="t">The scan, and everything it builds</div>
+    <p class="r">Four jobs from five kernels. The histogram's 16 bins sum to 4096, and compaction, run-length encoding and allocation all match JavaScript exactly.</p>
+  </a></li>
+  <li><a class="card" href="16-activation-zoo.html">
+    <div class="n">Catalogue 102 &middot; score 84</div>
+    <div class="t">The activation zoo, all twenty of them</div>
+    <p class="r">20 of 20 loaded. Softplus(0) returns ln 2 to seven digits; Softsign's measured slope is 1/1.05, the step size showing through.</p>
   </a></li>
 </ul>
 
