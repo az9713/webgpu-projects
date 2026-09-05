@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   input,button{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
   input[type=range]{width:320px;padding:0;vertical-align:middle}
@@ -33,6 +34,12 @@
 </div>
 <div id="st">loading the library&hellip;</div>
 <div id="rows"></div>
+<h2>The science</h2>
+<p>IEEE 754 binary32 spends its 32 bits on one sign, eight exponent bits and twenty-three fraction bits, and reads them as <code>(&minus;1)<sup>s</sup> &times; 2<sup>e&minus;127</sup> &times; (1 + f/2<sup>23</sup>)</code>. The leading 1 is not stored; it is implied. That single trick buys a free bit of precision and is the reason the format is not simply a fixed-point number.</p>
+<p>The consequence is that precision is relative, not absolute. The gap between neighbouring floats near a value x is about <code>x &middot; 2<sup>&minus;23</sup></code>, so there are always about seven significant decimal digits, whether x is 10<sup>&minus;10</sup> or 10<sup>10</sup>. This is why adding a small number to a large one can change nothing at all.</p>
+<p>The exponent field has two reserved values, and both are visible on this page. An exponent of 255 means infinity when the fraction is zero and NaN when it is not, which is why <code>&infin; &minus; &infin;</code> and <code>0/0</code> produce a value that is not equal to itself. An exponent of 0 means a subnormal: the implied leading 1 is dropped and the value is <code>2<sup>&minus;126</sup> &times; f/2<sup>23</sup></code>, which fills the gap between the smallest normal number, 1.18 &times; 10<sup>&minus;38</sup>, and zero, down to 1.4 &times; 10<sup>&minus;45</sup>. Subnormals cost silicon, and many GPUs simply flush them to zero; the last row divides 10<sup>&minus;38</sup> by 10<sup>5</sup> to land squarely inside that range and reports what this device chose.</p>
+<p>The overflow is not a bug either. The largest finite float is about 3.403 &times; 10<sup>38</sup>, so <code>exp(x)</code> must overflow the moment x passes <code>ln(3.403 &times; 10<sup>38</sup>) = 88.7228</code>. Drag the slider and the exponent field fills to 255 at 88.73.</p>
+
 <p style="margin-top:14px">The decoded line is <code>(&minus;1)<sup>sign</sup> &times; 2<sup>exponent &minus; 127</sup> &times; (1 + fraction / 2<sup>23</sup>)</code>. An exponent field of 255 means infinity when the fraction is zero and NaN otherwise. An exponent field of 0 is a subnormal: no hidden 1, and 2<sup>&minus;126</sup> instead. Many GPUs flush subnormals to zero, and the last row shows what this one does. <code>IsInf</code> and <code>IsNaN</code> are separate kernels, so their answers are the GPU's, not JavaScript's. Kernels: <code>Exp Sub Div Concat BitCast BitShift BitwiseAnd IsNaN IsInf</code>.</p>
 
 <script type="module">
@@ -47,7 +54,7 @@ try {
   say("ready");
   const f32 = (a) => ({ data: new Float32Array(a), shape: [a.length] });
   const u32 = (a) => ({ data: new Uint32Array(a), shape: [a.length] });
-  const LABELS = ["the number you typed", "exp(x) from the slider", "&infin; &minus; &infin;", "0 / 0", "1 / 0", "10<sup>&minus;38</sup> / 10<sup>10</sup>, which a CPU keeps as a subnormal"];
+  const LABELS = ["the number you typed", "exp(x) from the slider", "&infin; &minus; &infin;", "0 / 0", "1 / 0", "10<sup>&minus;38</sup> / 10<sup>5</sup>, which is 9.95 &times; 10<sup>&minus;44</sup>, a true subnormal"];
 
   async function compute() {
     const typed = Number(document.getElementById("num").value.trim());
@@ -55,7 +62,7 @@ try {
     // build the six values on the GPU: the typed one passes straight through
     const e = await exp({ x: f32([x]) }, { output: "gpu" });
     const d = await sub({ a: f32([Infinity]), b: f32([Infinity]) }, { output: "gpu" });
-    const q = await div({ a: f32([0, 1, 1e-38]), b: f32([0, 0, 1e10]) }, { output: "gpu" });
+    const q = await div({ a: f32([0, 1, 1e-38]), b: f32([0, 0, 1e5]) }, { output: "gpu" });
     const v = await concat({ a: f32([typed]), b: e.y, d: d.c, e: q.c }, { attrs: { axis: 0 } });
     [e.y, d.c, q.c].forEach((t) => t.destroy());
     const n = 6, V = { data: v.c.data, shape: [n] };

@@ -35,6 +35,8 @@ You need a browser with WebGPU: Chrome or Edge 113 and later, or Safari 26 and l
 
 ## The ten pages
 
+Every page carries a **The science** section under the demo: the governing equation or algorithm, why it is correct, and a number you can check against the page while it runs.
+
 Each result below was measured once, on an RTX 3050 laptop GPU, in Chrome. Read every number as plus or minus 10%. Every page also writes its numbers to `window.__result` and its state to `window.__status` and `window.__error`, so a script can check it without a human watching.
 
 | # | Page | What it does, and what it measured |
@@ -47,7 +49,7 @@ Each result below was measured once, on an RTX 3050 laptop GPU, in Chrome. Read 
 | 06 | [Train a digit classifier, then draw a digit](https://az9713.github.io/webgpu-projects/projects/06-mnist-train.html) | Fetches the tfjs MNIST sprite (10.7 MB). 784→64→10, batch 128, learning rate 0.3: 94.8% test accuracy after about 8 epochs, at 80–92 steps/s. Then you draw on a pad and it classifies the stroke. |
 | 07 | [Two moons, gradients written by hand](https://az9713.github.io/webgpu-projects/projects/07-two-moons.html) | 2→16→1, 26 calls a step, about 100 steps/s, 99.5% at 630 steps. The ReLU gradient is a `Greater` and a `Where` — there is no autograd here. |
 | 08 | [Principal components without a decomposition kernel](https://az9713.github.io/webgpu-projects/projects/08-pca-power.html) | Power iteration, because the 207 kernels contain no eigensolver. 27 iterations at an eigenvalue gap of 2.0, 88 iterations at a gap of 1.1. Residual \|Cv − λv\| ≈ 1e-5. |
-| 09 | [Take a floating point number apart](https://az9713.github.io/webgpu-projects/projects/09-float-bits.html) | `BitCast`, `BitShift` and `BitwiseAnd` split sign, exponent and mantissa. `exp(x)` overflows at x ≥ 88.73, and this GPU flushes subnormals to zero. |
+| 09 | [Take a floating point number apart](https://az9713.github.io/webgpu-projects/projects/09-float-bits.html) | `BitCast`, `BitShift` and `BitwiseAnd` split sign, exponent and mantissa. `exp(x)` overflows at x ≥ 88.73, which is ln(3.403×10³⁸) = 88.7228. Dividing 10⁻³⁸ by 10⁵ gives 9.95×10⁻⁴⁴, a true subnormal, and this GPU returns exactly zero for it — it flushes subnormals. |
 | 10 | [Slime mould: agents that build networks](https://az9713.github.io/webgpu-projects/projects/10-slime-mould.html) | 250k Physarum agents on a 512² trail map, 46 calls a step, 44 steps/s. A web forms by about step 140, then coarsens into thick veins. |
 
 ## The research behind the choice

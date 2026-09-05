@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   canvas{border:1px solid #334155;border-radius:6px;background:#0b1220}
   button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
@@ -33,6 +34,12 @@
   <canvas id="c" width="560" height="460"></canvas>
   <div class="stat" id="stats"></div>
 </div>
+<h2>The science</h2>
+<p>Principal components are the eigenvectors of the covariance matrix <code>C = X<sup>T</sup>X / n</code>, computed after subtracting the mean from every column. The leading eigenvector points along the direction of greatest variance; its eigenvalue &lambda;<sub>1</sub> is that variance. The usual route is an eigendecomposition or an SVD, and neither exists among these kernels.</p>
+<p>Power iteration reaches the same answer with nothing but multiplication. Write any starting vector in the eigenvector basis, <code>v = &Sigma; c<sub>i</sub>u<sub>i</sub></code>. Multiplying by C scales each term by its own eigenvalue, so after k steps the vector is <code>&Sigma; c<sub>i</sub>&lambda;<sub>i</sub><sup>k</sup>u<sub>i</sub></code>. Divide through by &lambda;<sub>1</sub><sup>k</sup> and every other term carries a factor <code>(&lambda;<sub>i</sub>/&lambda;<sub>1</sub>)<sup>k</sup></code>, which shrinks geometrically. Normalising after each multiply keeps the numbers finite; the direction converges on u<sub>1</sub>.</p>
+<p>The rate depends on one number only, the ratio &lambda;<sub>2</sub>/&lambda;<sub>1</sub>. Reaching a tolerance &epsilon; takes roughly <code>k &asymp; log &epsilon; / log(&lambda;<sub>2</sub>/&lambda;<sub>1</sub>)</code> iterations, so the count climbs steeply as the gap closes: the page needs 27 iterations at &lambda;<sub>1</sub>/&lambda;<sub>2</sub> = 2 and 88 at 1.1, against a tolerance of 10<sup>&minus;6</sup>. The exact constant also depends on how much of the random starting vector happened to lie along u<sub>1</sub>. When the two eigenvalues are equal there is no single answer to converge on, and the method never settles.</p>
+<p>The second component comes from Hotelling deflation: subtract <code>&lambda;<sub>1</sub>u<sub>1</sub>u<sub>1</sub><sup>T</sup></code> from C, which sets the found eigenvalue to zero and leaves the others untouched, then run the same iteration again.</p>
+
 <p style="margin-top:14px">Pipeline: <code>ReduceMean</code> and <code>Sub</code> centre the data; <code>Gemm</code> with <code>transA</code> builds the covariance X<sup>T</sup>X / n; each iteration is one <code>MatMul</code> and one <code>LpNormalization</code>; the deflation is <code>Gemm</code> for the outer product and <code>Sub</code>. The scores that are plotted are one last <code>MatMul</code>. Convergence stops when the vector moves by less than 10<sup>&minus;6</sup> between iterations. The rate is set by the ratio of the two largest eigenvalues: close eigenvalues converge slowly, and the slider lets you make them close.</p>
 
 <script type="module">

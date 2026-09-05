@@ -48,6 +48,14 @@
   <div><div class="bars" id="bars"></div><div style="margin-top:28px"><button id="clear">Clear</button> <span id="pred" style="color:#fb923c;font-size:1.4rem;font-weight:700;margin-left:12px"></span></div></div>
   <canvas id="thumb" width="28" height="28" style="width:112px;height:112px;image-rendering:pixelated"></canvas>
 </div>
+<h2>The science</h2>
+<p>The network is <code>784 &rarr; 64 &rarr; 10</code>: a linear map, a rectifier, a second linear map, and a softmax that turns ten scores into a probability distribution, <code>p<sub>i</sub> = e<sup>z<sub>i</sub></sup> / &Sigma;<sub>j</sub> e<sup>z<sub>j</sub></sup></code>. Training minimises the cross-entropy <code>L = &minus;log p<sub>y</sub></code> for the true class y.</p>
+<p>Composing those two gives the same cancellation that logistic regression gives, in ten dimensions at once:</p>
+<p><code>&part;L/&part;z = p &minus; y</code>, with y the one-hot label.</p>
+<p>The full Jacobian of the softmax is a 10&times;10 matrix, and the gradient of the logarithm is its exact inverse in the direction that matters, so the whole thing collapses to a subtraction. That is why the backward pass here starts with one <code>Sub</code> and no special-cased softmax derivative.</p>
+<p>The hidden layer is what a linear model cannot supply. A bare softmax on pixels is a linear classifier and tops out near 92% on MNIST, because the classes are not linearly separable in pixel space &mdash; a 7 and a 1 overlap heavily pixel by pixel. Sixty-four rectified units cut the input space into piecewise-linear regions and let the second layer draw a boundary that bends. The page reaches 94.8% on 2,000 images it never trained on.</p>
+<p>Then there is the pad, and it teaches the sharpest lesson. MNIST digits were not merely scanned: each was cropped to its ink, scaled so the longer side is 20 pixels, and placed by centre of mass in a 28&times;28 field. The pad reproduces that pipeline exactly. Skip it and the network sees a distribution it has never met, and misreads a digit that looks perfectly clear to you.</p>
+
 <p style="margin-top:14px">Forward: <code>MatMul</code>, <code>Add</code>, <code>Relu</code>, <code>MatMul</code>, <code>Add</code>, <code>Softmax</code>. The gradient of softmax with cross-entropy is one <code>Sub</code>. Backward: <code>Transpose</code>, <code>MatMul</code>, <code>ReduceSum</code>, <code>Greater</code>, <code>Where</code>, then <code>Mul</code> and <code>Sub</code> for the updates. The loss is <code>Log</code>, <code>Mul</code>, <code>ReduceSum</code>, <code>ReduceMean</code>. Each batch is shuffled and uploaded from JavaScript; the weights never leave the card. The data is the TensorFlow.js MNIST sprite, 10.7 MB, fetched from Google's public bucket: the first 20,000 images train, the next 2,000 test. A linear model reaches about 92%; the hidden layer does better.</p>
 
 <script type="module">

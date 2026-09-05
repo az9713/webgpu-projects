@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   canvas{background:#0b1220;border:1px solid #334155;border-radius:6px}
   button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
@@ -31,6 +32,12 @@
   <canvas id="c" width="640" height="420"></canvas>
   <table id="t"><thead><tr><th>N</th><th>readback ms</th><th>on-card ms</th><th>ratio</th><th>MB skipped</th></tr></thead><tbody></tbody></table>
 </div>
+<h2>The science</h2>
+<p>This page is not measuring the GPU. It is measuring the cost of asking the GPU a question and waiting for the answer.</p>
+<p>A matrix multiply of two N&times;N matrices does about <code>2N<sup>3</sup></code> arithmetic operations and moves about <code>4N<sup>2</sup></code> bytes for each matrix it has to transfer. The ratio of the two is the arithmetic intensity, <code>2N<sup>3</sup> / (8N<sup>2</sup>) = N/4</code> operations per byte &mdash; 64 at N = 256. By that measure the transfers ought to be free at large N, and the two curves ought to converge. They do not.</p>
+<p>The reason is that a readback is not only bytes, it is a synchronisation. Mapping a buffer forces the queue to drain: the CPU must wait for every dispatch to retire before it can read, and the GPU then sits idle while JavaScript copies the array and issues the next call. Nothing overlaps. The eight-call chain pays this seven times, and each round trip costs a fixed latency that does not shrink as N grows. So the gap is dominated by a term proportional to the <em>number</em> of readbacks, not their size &mdash; which is why the measured ratio settles into a band of 3.0 to 4.6&times; instead of closing.</p>
+<p>The rule that follows is the practical one for any GPU pipeline: batch work into long chains that stay resident, and cross the boundary once. The last column counts the bytes never copied, <code>7 &times; 2 &times; 4N<sup>2</sup></code>, which is the visible half of a cost whose larger half is the waiting.</p>
+
 <p style="margin-top:14px">Readback means the result buffer is mapped and copied to a typed array after every call, then uploaded again for the next one. On-card means <code>{ output: "gpu" }</code>, so the buffer is handed straight to the next call. The last column is the bytes the on-card mode never copies. To keep the values finite over eight multiplies, B is scaled by 1/N. Run-to-run variance on this laptop is about 10%, so read a gap smaller than that as noise. Chrome picks one GPU at startup, so this measures whichever adapter Chrome holds now.</p>
 
 <script type="module">

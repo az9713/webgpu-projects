@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   canvas{border:1px solid #334155;border-radius:6px}
   button,select{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
@@ -37,6 +38,12 @@
     <div style="color:#94a3b8;margin-top:10px">shading: the model's probability<br>white line: where it is 0.5</div>
   </div>
 </div>
+<h2>The science</h2>
+<p>Two interleaved crescents are the standard counter-example to linear classification. No straight line separates them, so a model of the form <code>&sigma;(w&middot;x + b)</code> cannot exceed about 85% here however long it trains. The fix is not a better optimiser; it is a function class that can bend.</p>
+<p>One hidden layer of rectifiers supplies the bend. Each unit computes <code>max(0, w<sub>i</sub>&middot;x + b<sub>i</sub>)</code>, which is zero on one side of a line and linear on the other. Sixteen of them partition the plane into convex cells, and the output layer takes a weighted sum, so the decision boundary is piecewise linear with at most sixteen folds. That is more than enough to wrap two crescents, and you can see the folds as straight creases in the surface while it trains.</p>
+<p>The rectifier's derivative is where the maths stops being smooth. It is the step function &mdash; 1 where the input is positive, 0 where it is not &mdash; so the backward pass is a comparison and a select rather than a formula. There is no gradient at exactly zero and the convention is to call it 0. A unit that is pushed negative for every training point receives no gradient at all and stops learning; this is the dying-ReLU failure, and it is why sixteen units are used to draw a boundary that needs fewer.</p>
+<p>The learning rate sets whether gradient descent converges or bounces. At 0.5 the page reaches 99.5% in about 630 steps; at 2 the loss oscillates, because the step overshoots the curvature of the loss surface.</p>
+
 <p style="margin-top:14px">Forward: <code>MatMul</code>, <code>Add</code>, <code>Relu</code>, <code>MatMul</code>, <code>Add</code>, <code>Sigmoid</code>. Backward: the gradient of sigmoid with the log loss is <code>Sub</code>, p &minus; y. The gradient through the rectifier is a comparison and a select, <code>Greater</code> then <code>Where</code>, which is two more calls than people expect. <code>Transpose</code> flips the activations for the weight gradients, <code>ReduceSum</code> collects the bias gradients, and <code>Mul</code> and <code>Sub</code> apply the update. Weights stay on the card between steps.</p>
 
 <script type="module">

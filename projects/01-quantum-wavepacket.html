@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   canvas{border:1px solid #334155;border-radius:6px;background:#000;cursor:crosshair;image-rendering:auto}
   button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
@@ -40,6 +41,12 @@
     <div style="color:#94a3b8;margin-top:8px">grey: the barrier<br>hue: phase, brightness: |&psi;|<sup>2</sup><br>the left and right edges absorb, so what leaves is gone</div>
   </div>
 </div>
+<h2>The science</h2>
+<p>The wave function obeys the Schr&ouml;dinger equation <code>i &part;&psi;/&part;t = &minus;&frac12;&nabla;<sup>2</sup>&psi; + V&psi;</code>, in units where &hbar; = m = 1. The two terms fight each other: the kinetic part is simple in frequency space, where it is a multiplication by k<sup>2</sup>/2, and the potential part is simple in position space, where it is a multiplication by V. Neither is simple in the other. The split-step method takes the short step anyway, applying each part where it is cheap:</p>
+<p><code>&psi; &larr; exp(&minus;iV&Delta;t) &middot; &psi;</code>, then <code>&psi; &larr; F<sup>&minus;1</sup>[ exp(&minus;ik<sup>2</sup>&Delta;t/2) &middot; F&psi; ]</code>.</p>
+<p>Every factor has modulus one, so the step cannot create or destroy probability. That is why the total staying at 1.0000 is a real check and not a formality. The splitting is not exact, because the two operators do not commute; the error per step is O(&Delta;t<sup>2</sup>), which is why &Delta;t is kept at 0.4.</p>
+<p>Tunnelling is the part with no classical counterpart. Inside a barrier higher than the particle's energy the wave number turns imaginary, <code>&kappa; = &radic;(2(V<sub>0</sub> &minus; E))</code>, and the wave decays as e<sup>&minus;&kappa;x</sup> instead of oscillating. It is small on the far side, not zero. For a square barrier of width a the exact transmission is <code>T = [ 1 + V<sub>0</sub><sup>2</sup> sinh<sup>2</sup>(&kappa;a) / (4E(V<sub>0</sub>&minus;E)) ]<sup>&minus;1</sup></code>. The default barrier is 4 cells wide, V<sub>0</sub> = 0.6 against a packet energy of about 0.405, which gives &kappa; = 0.62 and T = 2.4%. The page measures 2.3%.</p>
+
 <p style="margin-top:14px">The split-step method alternates a multiply in position space with a multiply in frequency space, so it is a <code>DFT</code> sandwich. Each step: multiply by exp(&minus;iV&Delta;t), transform, multiply by exp(&minus;ik<sup>2</sup>&Delta;t/2), transform back. A complex multiply on interleaved (real, imaginary) pairs is <code>Mul</code>, a <code>Gather</code> that swaps the pair, <code>Mul</code> and <code>Add</code>. The two-dimensional transform is <code>DFT</code> along one axis, <code>Transpose</code>, <code>DFT</code>, <code>Transpose</code>, because the fast path runs along one axis only. The phase tables come from <code>Cos</code>, <code>Sin</code>, <code>Neg</code> and <code>Concat</code> when the barrier changes. Units: &hbar; = m = 1, one grid cell = 1, &Delta;t = 0.4. The left and right edges carry a smooth absorbing mask, one more <code>Mul</code>, so the reflected part does not wrap round the periodic box and arrive on the far side. Total probability is read back every frame: it stays at 1.0000 until something reaches an edge, which is the check that the transform pair is unitary.</p>
 
 <script type="module">

@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   canvas{border:1px solid #334155;border-radius:6px;max-width:100%}
   button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
@@ -28,6 +29,11 @@
 </div>
 <div id="st">loading the library&hellip;</div>
 <canvas id="c" width="512" height="512"></canvas>
+<h2>The science</h2>
+<p>There is no training here and no data. The network is a function from a pixel's coordinates to a colour, and the picture is that function drawn over the plane. Everything interesting comes from the shape of the function, not from anything it learned.</p>
+<p>The first layer is what makes it look like anything at all. It computes <code>sin(f &middot; Wx)</code> for a random matrix W, which is the random Fourier feature construction: a set of sinusoids at random frequencies and random orientations. Rahimi and Recht showed that averaging such features approximates a smooth stationary kernel, and the practical consequence here is that the frequency slider f sets a single length scale. The typical distance between features in the image falls roughly as 1/f, so a low f gives broad washes and a high f gives fine grain. Without that layer, tanh of a linear function of x and y can only produce soft diagonal ramps.</p>
+<p>The tanh layers that follow compose those sinusoids. A composition of smooth bounded functions stays smooth and bounded, so the output has no edges except where a tanh saturates &mdash; and a saturating tanh is exactly what draws a hard contour. Feeding in the radius <code>r = &radic;(x<sup>2</sup>+y<sup>2</sup>)</code> alongside x and y adds a term with rotational symmetry, which is why concentric structure appears so often. The final sigmoid maps each of the three outputs into [0, 1] to be read as red, green and blue.</p>
+
 <p style="margin-top:14px">Input per pixel: x, y in [&minus;1, 1] and the distance from the centre. Layer 1 is <code>Sin</code> of a random projection, scaled by the frequency slider. The hidden layers are <code>MatMul</code>, <code>Add</code>, <code>Tanh</code>. The output is <code>Sigmoid</code>. Everything after the coordinate upload stays on the card until the final colour readback.</p>
 
 <script type="module">

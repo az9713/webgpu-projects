@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   canvas{border:1px solid #334155;border-radius:6px;background:#000}
   button,select,input{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
@@ -40,6 +41,13 @@
     <div style="color:#94a3b8;margin-top:8px">left, centre and right sensors read the trail<br>turn toward the strongest, with a little noise<br>move one cell, deposit, blur and decay</div>
   </div>
 </div>
+<h2>The science</h2>
+<p>This is the Jones agent model of <em>Physarum polycephalum</em>, the slime mould that finds shortest paths through a maze and, in Nakagaki's experiment, reproduced the Tokyo rail network when food was placed at the stations. Each agent obeys three rules and holds no map: sample the trail at three points ahead, turn toward the strongest, deposit a little trail where you stand.</p>
+<p>The trail map is the real computer. Between steps it obeys a discrete reaction&ndash;diffusion equation &mdash; a blur, a decay and a source term &mdash; which is the forward Euler step of</p>
+<p><code>&part;T/&part;t = D&nabla;<sup>2</sup>T &minus; &rho;T + S</code>,</p>
+<p>with D set by the 3&times;3 blur and &rho; by the decay slider. Deposit and diffusion spread signal outwards; decay removes it everywhere at a constant rate. The balance of the two fixes a length scale of order <code>&radic;(D/&rho;)</code>, and that is the width of the veins you see. Raise the decay and the network becomes finer; lower it and the whole map saturates into a smear.</p>
+<p>The patterns form because the feedback is positive and the resource is limited. An agent that follows a trail also reinforces it, so a path that attracts traffic attracts more &mdash; but decay means a trail survives only while it keeps being used. Paths compete, and the ones with less traffic fade. That is why the web appears within a few hundred steps and then coarsens: once the structure is connected, thin veins lose their traffic to thick ones and vanish, exactly as they do in the organism.</p>
+
 <p style="margin-top:14px">Per step: <code>Concat</code> the three sensor angles, <code>Cos</code> and <code>Sin</code>, <code>Mul</code> and <code>Add</code> for the sensor positions, <code>Transpose</code> into the sampling layout, <code>GridSample</code> to read the trail at all three sensors of every agent at once, <code>Split</code>, <code>Greater</code> and <code>And</code> to decide, <code>Where</code> to turn, <code>Add</code> a noise buffer, <code>Mod</code> to wrap the map, <code>Floor</code>, <code>Cast</code>, <code>Mul</code> and <code>Add</code> to build a flat integer index, <code>Reshape</code> and <code>ScatterElements</code> with <code>reduction: "add"</code> to deposit (ScatterND wants int64 indices, which no kernel can produce on the card), and <code>Conv</code> with a 3&times;3 kernel scaled by the decay to blur and fade. There is no random-number kernel among the 207, so eight noise buffers are uploaded once and cycled. Positions, headings and the trail never leave the card; the trail is read back once per frame to draw.</p>
 
 <script type="module">

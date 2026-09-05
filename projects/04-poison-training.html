@@ -6,6 +6,7 @@
 <style>
   body{background:#0f172a;color:#cbd5e1;font:15px/1.6 system-ui,sans-serif;margin:0;padding:24px;max-width:1100px}
   h1{color:#fb923c;font-size:1.25rem;margin:0 0 4px}
+  h2{color:#fb923c;font-size:1rem;margin:22px 0 6px}
   p{color:#94a3b8;margin:0 0 14px;font-size:.92rem}
   canvas{border:1px solid #334155;border-radius:6px;cursor:crosshair}
   button{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font:inherit}
@@ -33,6 +34,13 @@
     <div style="color:#94a3b8;margin-top:10px">orange: label 0 &nbsp; blue: label 1<br>a ring marks a poisoned point<br>shading: the model's probability of label 1</div>
   </div>
 </div>
+<h2>The science</h2>
+<p>The model is logistic regression: <code>p = &sigma;(w&middot;x + b)</code> with <code>&sigma;(z) = 1/(1+e<sup>&minus;z</sup>)</code>, fitted by minimising the log loss <code>L = &minus;[ y log p + (1&minus;y) log(1&minus;p) ]</code>. The chain rule through the sigmoid and the logarithm produces a cancellation that is the reason this model is taught first:</p>
+<p><code>&part;L/&part;w = (p &minus; y) x</code>.</p>
+<p>The derivative of the sigmoid disappears entirely, which is why the whole backward pass on this page is a single <code>Sub</code>. Each training point pushes the boundary with a force proportional to how wrong it is, times its own position vector.</p>
+<p>That product is the vulnerability. A point that is mislabelled and far from the boundary has <code>p &minus; y</code> close to 1 <em>and</em> a large <code>x</code>, so its term dominates the sum while a correctly classified point near the boundary contributes almost nothing. Ten bad points out of hundreds can outvote the rest. Click deep inside the wrong cluster and you are maximising exactly this leverage.</p>
+<p>The fading confidence has a separate cause. With no regularisation and cleanly separable data, the loss keeps falling as &#8214;w&#8214; grows, so the weights run away and the shading turns hard. Contradictory points make the data non-separable: growing &#8214;w&#8214; now increases the loss on the poisoned points, so the norm settles at a finite value. The boundary moves a little and the calibration is destroyed &mdash; clean accuracy stays near 98% while the model stops knowing what it knows.</p>
+
 <p style="margin-top:14px">Each step is eight kernel calls, all on the card: <code>MatMul</code> for the logits, <code>Sigmoid</code>, <code>Sub</code> for p &minus; y, <code>MatMul</code> with the transposed inputs for the gradient, <code>Mul</code> by the learning rate, <code>Sub</code> to update the weights, then <code>Abs</code> and <code>ReduceMean</code> to report the error. The weights stay resident between steps. Logistic regression is fragile by design here: every point pulls on one straight line, so a mislabelled point far from the boundary pulls hardest.</p>
 
 <script type="module">

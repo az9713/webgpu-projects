@@ -30,6 +30,12 @@
 <div class="row" id="vals"></div>
 <h2>Absolute error, shared scale</h2>
 <div class="row" id="errs"></div>
+<h2>The science</h2>
+<p>Uniform symmetric quantisation replaces each weight with the nearest point on an evenly spaced grid. One scale s covers the whole tensor: <code>s = max|w| / q<sub>max</sub></code>, the stored integer is <code>q = round(w/s)</code>, and the recovered weight is <code>&#375; = s &middot; q</code>. Rounding to a grid of spacing s can be wrong by at most half a spacing, so the error is bounded by</p>
+<p><code>|w &minus; &#375;| &le; s/2 = max|w| / (2 q<sub>max</sub>)</code>, with an RMS error of <code>s/&radic;12</code> for errors spread evenly across a step.</p>
+<p>For b bits the grid has <code>q<sub>max</sub> = 2<sup>b&minus;1</sup> &minus; 1</code>, which is 127, 7 and 1 at 8, 4 and 2 bits. The bound therefore predicts the 4-bit error to be 127/7 = 18 times the 8-bit error. The page measures 0.035 and 0.63, a ratio of 18.0. That agreement is the whole argument: the error is set by the single worst weight in the tensor, divided by the number of grid points.</p>
+<p>Which is also the problem. One outlier stretches s for every weight that shares the scale, and the majority of small weights are then rounded on a grid far coarser than they need. This is why production int8 pipelines quantise per row or per channel rather than per tensor: it gives each row its own max|w|, so a single large channel can no longer tax the rest. Switch the scale mode and watch the error image change character &mdash; the bright rows go quiet.</p>
+
 <p style="margin-top:14px">Pipeline per panel: <code>QuantizeLinear</code> to int8 with scale = max|w| / q<sub>max</sub>, then <code>DequantizeLinear</code>, then <code>Sub</code>, <code>Abs</code>, <code>ReduceMax</code> and <code>ReduceMean</code> for the numbers. q<sub>max</sub> is 127, 7 and 1, so the 4-bit and 2-bit panels are symmetric grids of 15 and 3 levels. The kernels only store int8, so the 4-bit and 2-bit sizes are arithmetic, not measured buffers. Value panels clip the colour range at three standard deviations, or the outliers would hide everything else.</p>
 
 <script type="module">
